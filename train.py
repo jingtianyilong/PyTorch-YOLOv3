@@ -43,6 +43,7 @@ cuda = torch.cuda.is_available() and opt.use_cuda
 os.makedirs("output", exist_ok=True)
 os.makedirs("checkpoints", exist_ok=True)
 
+
 classes = load_classes(opt.class_path)
 
 # Get data configuration
@@ -105,6 +106,27 @@ for epoch in range(opt.epochs):
                 model.losses["precision"],
             )
         )
+
+        with open('training.log','a') as traininglog:
+            traininglog.write(
+                "[Epoch %d/%d, Batch %d/%d] [Losses: x %f, y %f, w %f, h %f, conf %f, cls %f, total %f, recall: %.5f, precision: %.5f]" 
+                % (
+                epoch,
+                opt.epochs,
+                batch_i,
+                len(dataloader),
+                model.losses["x"],
+                model.losses["y"],
+                model.losses["w"],
+                model.losses["h"],
+                model.losses["conf"],
+                model.losses["cls"],
+                loss.item(),
+                model.losses["recall"],
+                model.losses["precision"],
+                )
+            )
+
 
         model.seen += imgs.size(0)
 
