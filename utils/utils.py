@@ -6,6 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 import numpy as np
+import cv2
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -256,3 +257,148 @@ def build_targets(
 def to_categorical(y, num_classes):
     """ 1-hot encodes a tensor """
     return torch.from_numpy(np.eye(num_classes, dtype="uint8")[y])
+
+def write_results(prediction, confidence, num_classes, nms_conf = 0.4):
+    conf_mask = (prediction[:,:,4] > confidence).float().unsqueeze(2)
+    prediction = prediction*conf_mask
+    
+    box_corner = prediction.new(prediction.shape)
+    # From (center x, center y, width, height) to (x1, y1, x2, y2)
+    box_corner[:,:,0] = (prediction[:,:,0] - prediction[:,:,2]/2)
+    box_corner[:,:,1] = (prediction[:,:,1] - prediction[:,:,3]/2)
+    box_corner[:,:,2] = (prediction[:,:,0] + prediction[:,:,2]/2) 
+    box_corner[:,:,3] = (prediction[:,:,1] + prediction[:,:,3]/2)
+    prediction[:,:,:4] = box_corner[:,:,:4]
+    # prediction is using x,y,w,h to describe the boundingbox, convert to the 4 corner point
+
+    batch_size = prediction.size(0)
+
+    write = False
+
+
+    for ind in range(batch_size):
+        image_pred = prediction[ind]          #image Tensor
+       #confidence threshholding 
+       #NMS
+    
+        max_conf, max_conf_score = torch.max(image_pred[:,5:5+ num_classes], 1)
+        # torch.max(input) return the max value
+        # torch.max(input, dim, keepdim=False, out=None) return (max value, max value index)
+        # dim=0 search max as column, return index of the row
+        # dim =1 search max as row， return index of the column
+        max_conf = max_conf.float().unsqueeze(1) # transform +1 dimension. 3 dimension
+        max_conf_score = max_conf_score.float().unsqueeze(1)
+        seq = (image_pred[:,:5], max_conf, max_conf_score)
+        image_pred = torch.cat(seq, 1)
+        # torch.cat combine seq together. dim indicated in which direction are concatenated.
+        # dim=0 generate more row, dim=1 generate more column
+        
+        non_zero_ind =  (torch.nonzero(image_pred[:,4]))
+        try:
+            image_pred_ = image_pred[non_zero_ind.squeeze(),:].view(-1,7)
+            # view() convert the tensor to different size. with 7column but don't know how many rows.
+        except:
+            continue
+        
+        if image_pred_.shape[0] == 0:
+            continue       
+#        
+  
+        #Get the various classes detected in the image
+        img_classes = unique(image_pred_[:,-1])  # -1 index holds the class index
+        
+        
+        for cls in img_classes:
+            #perform NMS
+
+        
+            #get the detections with one particular class
+            cls_mask = image_pred_*(image_pred_[:,-1] == cls).float().unsqueeze(1)
+            class_mask_ind = torch.nonzero(cls_mask[:,-2]).squeeze()
+            image_pred_class = image_pred_[class_mask_ind].view(-1,7)
+
+            #sort the detections such that the entry with the maximum objectness
+            #confidence is at the top
+            conf_sort_index = torch.sort(image_pred_class[:,4], descending = True )[1]
+            image_pred_class = image_pred_class[conf_sort_index]
+            idx = image_pred_class.size(0)   #Number of detections
+            
+            for i in range(idx):
+                #Get the IOUs of all boxes that come after the one we are looking at 
+                #in the loop
+                try:
+                    ious = bbox_iou(image_pred_class[i].unsqueeze(0), image_pred_class[i+1:])
+                except ValueError:
+                    break
+            
+                except IndexError:
+                    break
+            
+                #Zero out all the detections that have IoU > treshhold
+                iou_mask = (ious < nms_conf).float().unsqueeze(1)
+                image_pred_class[i+1:] *= iou_mask       
+            
+                #Remove the non-zero entries
+                non_zero_ind = torch.nonzero(image_pred_class[:,4]).squeeze()
+                image_pred_class = image_pred_class[non_zero_ind].view(-1,7)
+                
+            batch_ind = image_pred_class.new(image_pred_class.size(0), 1).fill_(ind)      #Repeat the batch_id for as many detections of the class cls in the image
+            seq = batch_ind, image_pred_class
+            
+            if not write:
+                output = torch.cat(seq,1)
+                write = True
+            else:
+                out = torch.cat(seq,1)
+                output = torch.cat((output,out)) # default dim=0
+    try:
+        return output
+    except:
+        return 0
+
+def letterbox_image(img, input_dim):
+    '''resize image with unchanged aspect ratio using padding'''
+
+    # img is a large array with rgb data
+    img_w, img_h = img.shape[1], img.shape[0]
+    w, h = input_dim
+    new_w = int(img_w * min(w/img_w, h/img_h))
+    new_h = int(img_h * min(w/img_w, h/img_h))
+    # calculate the actual size of the image wrt. input_dim
+    resized_image = cv2.resize(img, (new_w,new_h), interpolation = cv2.INTER_CUBIC)
+    # do the resize using cv2
+    
+    canvas = np.full((input_dim[1], input_dim[0], 3), 128)
+    # return a np array that is size(w,h,3), and filled with 128
+
+    canvas[(h-new_h)//2:(h-new_h)//2 + new_h,(w-new_w)//2:(w-new_w)//2 + new_w, :] = resized_image
+    # resize the resized image to (416, 416, 3) np.array with gray edges filled in the blanked area
+    
+    return canvas
+
+def prep_image(img, input_dim):
+    """
+    Prepare image for inputting to the neural network. 
+    
+    Returns a Variable 
+    """
+
+    img = (letterbox_image(img, (input_dim, input_dim)))
+    img = img[:,:,::-1].transpose((2,0,1)).copy()
+    # transpose (h416, w416, channel3) to (channel3, h416, w416)
+
+    img = torch.from_numpy(img).float().div(255.0).unsqueeze(0)
+    # div return the reletively value from original value and the setting value
+    # unsqueeze add a dimension to a specific position
+
+
+    return img
+
+def unique(tensor):
+    tensor_np = tensor.cpu().numpy()
+    unique_np = np.unique(tensor_np)
+    unique_tensor = torch.from_numpy(unique_np)
+
+    tensor_res = tensor.new(unique_tensor.shape)
+    tensor_res.copy_(unique_tensor)
+    return tensor_res

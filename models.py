@@ -20,7 +20,9 @@ def create_modules(module_defs):
     """
     Constructs module list of layer blocks from module configuration in module_defs
     """
+    
     hyperparams = module_defs.pop(0)
+    # pop remove item in specific position of the list
     output_filters = [int(hyperparams["channels"])]
     module_list = nn.ModuleList()
     for i, module_def in enumerate(module_defs):
@@ -348,3 +350,4 @@ class Darknet(nn.Module):
                 conv_layer.weight.data.cpu().numpy().tofile(fp)
 
         fp.close()
+# we concern only person, bicycle, car, motorbike, bus, traffic light, stop sign, parking meter

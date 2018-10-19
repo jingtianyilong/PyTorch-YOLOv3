@@ -23,12 +23,13 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--batch_size", type=int, default=16, help="size of each image batch")
 parser.add_argument("--model_config_path", type=str, default="config/v390.cfg", help="path to model config file")
 parser.add_argument("--data_config_path", type=str, default="config/coco.data", help="path to data config file")
-parser.add_argument("--weights_path", type=str, default="/home/zijieguo/project/darknet/backup/v390_280000.weights", help="path to weights file")
+# parser.add_argument("--weights_path", type=str, default="/home/zijieguo/project/darknet/backup/v390_280000.weights", help="path to weights file")
+parser.add_argument("--weights_path", type=str, default="checkpoints/29.weights", help="path to weights file")
 parser.add_argument("--class_path", type=str, default="data/coco.names", help="path to class label file")
 parser.add_argument("--iou_thres", type=float, default=0.5, help="iou threshold required to qualify as detected")
-parser.add_argument("--conf_thres", type=float, default=0.5, help="object confidence threshold")
+parser.add_argument("--conf_thres", type=float, default=0.2, help="object confidence threshold")
 parser.add_argument("--nms_thres", type=float, default=0.45, help="iou thresshold for non-maximum suppression")
-parser.add_argument("--n_cpu", type=int, default=7, help="number of cpu threads to use during batch generation")
+parser.add_argument("--n_cpu", type=int, default=8, help="number of cpu threads to use during batch generation")
 parser.add_argument("--img_size", type=int, default=416, help="size of each image dimension")
 parser.add_argument("--use_cuda", type=bool, default=True, help="whether to use cuda if available")
 opt = parser.parse_args()
@@ -162,11 +163,12 @@ for c, ap in average_precisions.items():
     print(f"+ Class '{c}' - AP: {ap}")
 
 mAP = np.mean(list(average_precisions.values()))
-concern_index = [1,2,3,4,6,8,10,12,13]
-# we concern only person, bicycle, car, motorbike, bus, traffic light, stop sign, parking meter
 
+# we concern only person, bicycle, car, motorbike, bus, traffic light, stop sign, parking meter
+concern_index = [1,2,3,4,6,8,10,12,13]
 concern_values = list()
 for index in concern_index:
     concern_values.append(average_precisions[index])
+
 mAP_concern = np.mean(concern_values)
 print(f"mAP_all: {mAP}, in which what we concern: {mAP_concern}")
