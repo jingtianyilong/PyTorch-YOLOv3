@@ -1,4 +1,4 @@
-from __future__ import division
+# from __future__ import division
 
 import torch
 import torch.nn as nn
@@ -12,15 +12,15 @@ from utils.parse_config import *
 from utils.utils import build_targets
 from collections import defaultdict
 
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
+# import matplotlib.pyplot as plt
+# import matplotlib.patches as patches
 
 
 def create_modules(module_defs):
     """
     Constructs module list of layer blocks from module configuration in module_defs
     """
-    
+
     hyperparams = module_defs.pop(0)
     # pop remove item in specific position of the list
     output_filters = [int(hyperparams["channels"])]
@@ -350,4 +350,3 @@ class Darknet(nn.Module):
                 conv_layer.weight.data.cpu().numpy().tofile(fp)
 
         fp.close()
-# we concern only person, bicycle, car, motorbike, bus, traffic light, stop sign, parking meter

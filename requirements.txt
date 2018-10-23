@@ -1,6 +1,5 @@
 scikit-image
 numpy
-PyTorch>=0.4.0
-torchvision
 pillow
 matplotlib
+

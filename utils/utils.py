@@ -125,7 +125,7 @@ def bbox_iou_numpy(box1, box2):
     return intersection / ua
 
 
-def non_max_suppression(prediction, num_classes, conf_thres=0.5, nms_thres=0.4):
+def non_max_suppression(prediction, num_classes=80, conf_thres=0.5, nms_thres=0.4):
     """
     Removes detections with lower object confidence score than 'conf_thres' and performs
     Non-Maximum Suppression to further filter detections.
@@ -161,7 +161,7 @@ def non_max_suppression(prediction, num_classes, conf_thres=0.5, nms_thres=0.4):
             # Get the detections with the particular class
             detections_class = detections[detections[:, -1] == c]
             # Sort the detections by maximum objectness confidence
-            _, conf_sort_index = torch.sort(detections_class[:, 4], descending=True)
+            conf_sort_index = torch.sort(detections_class[:, 4], descending=True)[1]
             detections_class = detections_class[conf_sort_index]
             # Perform non-maximum suppression
             max_detections = []
@@ -258,103 +258,115 @@ def to_categorical(y, num_classes):
     """ 1-hot encodes a tensor """
     return torch.from_numpy(np.eye(num_classes, dtype="uint8")[y])
 
-def write_results(prediction, confidence, num_classes, nms_conf = 0.4):
-    conf_mask = (prediction[:,:,4] > confidence).float().unsqueeze(2)
-    prediction = prediction*conf_mask
-    
-    box_corner = prediction.new(prediction.shape)
-    # From (center x, center y, width, height) to (x1, y1, x2, y2)
-    box_corner[:,:,0] = (prediction[:,:,0] - prediction[:,:,2]/2)
-    box_corner[:,:,1] = (prediction[:,:,1] - prediction[:,:,3]/2)
-    box_corner[:,:,2] = (prediction[:,:,0] + prediction[:,:,2]/2) 
-    box_corner[:,:,3] = (prediction[:,:,1] + prediction[:,:,3]/2)
-    prediction[:,:,:4] = box_corner[:,:,:4]
-    # prediction is using x,y,w,h to describe the boundingbox, convert to the 4 corner point
-
-    batch_size = prediction.size(0)
-
-    write = False
-
-
-    for ind in range(batch_size):
-        image_pred = prediction[ind]          #image Tensor
-       #confidence threshholding 
-       #NMS
-    
-        max_conf, max_conf_score = torch.max(image_pred[:,5:5+ num_classes], 1)
-        # torch.max(input) return the max value
-        # torch.max(input, dim, keepdim=False, out=None) return (max value, max value index)
-        # dim=0 search max as column, return index of the row
-        # dim =1 search max as row， return index of the column
-        max_conf = max_conf.float().unsqueeze(1) # transform +1 dimension. 3 dimension
-        max_conf_score = max_conf_score.float().unsqueeze(1)
-        seq = (image_pred[:,:5], max_conf, max_conf_score)
-        image_pred = torch.cat(seq, 1)
-        # torch.cat combine seq together. dim indicated in which direction are concatenated.
-        # dim=0 generate more row, dim=1 generate more column
-        
-        non_zero_ind =  (torch.nonzero(image_pred[:,4]))
-        try:
-            image_pred_ = image_pred[non_zero_ind.squeeze(),:].view(-1,7)
-            # view() convert the tensor to different size. with 7column but don't know how many rows.
-        except:
-            continue
-        
-        if image_pred_.shape[0] == 0:
-            continue       
-#        
-  
-        #Get the various classes detected in the image
-        img_classes = unique(image_pred_[:,-1])  # -1 index holds the class index
-        
-        
-        for cls in img_classes:
-            #perform NMS
-
-        
-            #get the detections with one particular class
-            cls_mask = image_pred_*(image_pred_[:,-1] == cls).float().unsqueeze(1)
-            class_mask_ind = torch.nonzero(cls_mask[:,-2]).squeeze()
-            image_pred_class = image_pred_[class_mask_ind].view(-1,7)
-
-            #sort the detections such that the entry with the maximum objectness
-            #confidence is at the top
-            conf_sort_index = torch.sort(image_pred_class[:,4], descending = True )[1]
-            image_pred_class = image_pred_class[conf_sort_index]
-            idx = image_pred_class.size(0)   #Number of detections
-            
-            for i in range(idx):
-                #Get the IOUs of all boxes that come after the one we are looking at 
-                #in the loop
-                try:
-                    ious = bbox_iou(image_pred_class[i].unsqueeze(0), image_pred_class[i+1:])
-                except ValueError:
-                    break
-            
-                except IndexError:
-                    break
-            
-                #Zero out all the detections that have IoU > treshhold
-                iou_mask = (ious < nms_conf).float().unsqueeze(1)
-                image_pred_class[i+1:] *= iou_mask       
-            
-                #Remove the non-zero entries
-                non_zero_ind = torch.nonzero(image_pred_class[:,4]).squeeze()
-                image_pred_class = image_pred_class[non_zero_ind].view(-1,7)
-                
-            batch_ind = image_pred_class.new(image_pred_class.size(0), 1).fill_(ind)      #Repeat the batch_id for as many detections of the class cls in the image
-            seq = batch_ind, image_pred_class
-            
-            if not write:
-                output = torch.cat(seq,1)
-                write = True
-            else:
-                out = torch.cat(seq,1)
-                output = torch.cat((output,out)) # default dim=0
-    try:
-        return output
-    except:
-        return 0
+# def write_results(prediction, confidence, num_classes, nms_conf = 0.4):
+#     '''
+#     Perform non maximal suppression
+#     :param prediction: prediction matrix
+#     :param confidence: confidence threshold
+#     :param num_classes: number of classes
+#     :param nms_conf:
+#     :return:     Returns detections with shape:(x1, y1, x2, y2, object_conf, class_score, class_pred)
+#     '''
+#
+#     conf_mask = (prediction[:,:,4] > confidence).float().unsqueeze(2)
+#     prediction = prediction*conf_mask
+#
+#     box_corner = prediction.new(prediction.shape)
+#     # From (center x, center y, width, height, confidence) to (x1, y1, x2, y2, confidence)
+#     box_corner[:,:,0] = (prediction[:,:,0] - prediction[:,:,2]/2)
+#     box_corner[:,:,1] = (prediction[:,:,1] - prediction[:,:,3]/2)
+#     box_corner[:,:,2] = (prediction[:,:,0] + prediction[:,:,2]/2)
+#     box_corner[:,:,3] = (prediction[:,:,1] + prediction[:,:,3]/2)
+#     prediction[:,:,:4] = box_corner[:,:,:4]
+#     # prediction is using x,y,w,h to describe the boundingbox, convert to the 4 corner point
+#
+#     batch_size = prediction.size(0)
+#
+#     write = False
+#
+#
+#     for ind in range(batch_size):
+#         image_pred = prediction[ind]          #image Tensor
+#        #confidence threshholding
+#        #NMS
+#
+#         max_conf, max_conf_score = torch.max(image_pred[:,5:5+ num_classes], 1)
+#         # torch.max(input) return the max value
+#         # torch.max(input, dim, keepdim=False, out=None) return (max value, max value index)
+#         # dim=0 search max as column, return index of the row
+#         # dim =1 search max as row， return index of the column
+#         max_conf = max_conf.float().unsqueeze(1) # transform +1 dimension. 3 dimension
+#         max_conf_score = max_conf_score.float().unsqueeze(1)
+#         seq = (image_pred[:,:5], max_conf, max_conf_score) # (5+1+1)
+#         image_pred = torch.cat(seq, 1)
+#         # torch.cat combine seq together. dim indicated in which direction are concatenated.
+#         # dim=0 generate more row, dim=1 generate more column
+#
+#         non_zero_ind =  (torch.nonzero(image_pred[:,4]))
+#         try:
+#             image_pred_ = image_pred[non_zero_ind.squeeze(),:].view(-1,7)
+#             # view() convert the tensor to different size. with 7column but don't know how many rows.
+#         except:
+#             continue
+#
+#         if image_pred_.shape[0] == 0:
+#             continue
+# #
+#
+#         #Get the various classes detected in the image
+#         img_classes = unique(image_pred_[:,-1])  # -1 index holds the class index
+#         # sort and remove duplicate element.
+#
+#         for cls in img_classes:
+#             #perform NMS
+#
+#
+#             #get the detections with one particular class
+#             cls_mask = image_pred_*(image_pred_[:,-1] == cls).float().unsqueeze(1) # filter out the object of class cls
+#             class_mask_ind = torch.nonzero(cls_mask[:,-2]).squeeze()
+#             # indeces of nunzero element. output zxn. n=input_dim, z=num_nun_zero_element
+#             image_pred_class = image_pred_[class_mask_ind].view(-1,7)
+#
+#             #sort the detections such that the entry with the maximum objectness
+#             #confidence is at the top
+#             conf_sort_index = torch.sort(image_pred_class[4,:], descending=True)[1]
+#             print('\nsize of sonf_sort_index: ', conf_sort_index.size())
+#             print('\nsize of image_pred_class: ', image_pred.size())
+#             image_pred_class = image_pred_class[conf_sort_index]
+#             idx = image_pred_class.size(0)   #Number of detections
+#
+#             for i in range(idx):
+#                 #Get the IOUs of all boxes that come after the one we are looking at
+#                 #in the loop
+#                 try:
+#                     ious = bbox_iou(image_pred_class[i].unsqueeze(0), image_pred_class[i+1:])
+#                 except ValueError:
+#                     break
+#
+#                 except IndexError:
+#                     break
+#
+#                 #Zero out all the detections that have IoU > treshhold
+#                 iou_mask = (ious < nms_conf).float().unsqueeze(1)
+#                 image_pred_class[i+1:] *= iou_mask
+#
+#                 #Remove the non-zero entries
+#                 non_zero_ind = torch.nonzero(image_pred_class[:,4]).squeeze()
+#                 image_pred_class = image_pred_class[non_zero_ind].view(-1,7)
+#
+#             batch_ind = image_pred_class.new(image_pred_class.size(0), 1).fill_(ind)      #Repeat the batch_id for as many detections of the class cls in the image
+#             seq = batch_ind, image_pred_class
+#
+#             if not write:
+#                 output = torch.cat(seq,1)
+#                 write = True
+#             else:
+#                 out = torch.cat(seq,1)
+#                 output = torch.cat((output,out)) # default dim=0
+#     try:
+#         return output
+#     except:
+#         return 0
 
 def letterbox_image(img, input_dim):
     '''resize image with unchanged aspect ratio using padding'''
@@ -378,9 +390,9 @@ def letterbox_image(img, input_dim):
 
 def prep_image(img, input_dim):
     """
-    Prepare image for inputting to the neural network. 
+    Prepare image for inputting to the neural network.
     
-    Returns a Variable 
+    Returns a Variable
     """
 
     img = (letterbox_image(img, (input_dim, input_dim)))
@@ -396,7 +408,7 @@ def prep_image(img, input_dim):
 
 def unique(tensor):
     tensor_np = tensor.cpu().numpy()
-    unique_np = np.unique(tensor_np)
+    unique_np = np.unique(tensor_np) # return an sorted array that has no duplicate element
     unique_tensor = torch.from_numpy(unique_np)
 
     tensor_res = tensor.new(unique_tensor.shape)

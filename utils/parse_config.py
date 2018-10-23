@@ -23,8 +23,8 @@ def parse_model_config(path):
 def parse_data_config(path):
     """Parses the data configuration file"""
     options = dict()
-    options['gpus'] = '0,1,2,3'
-    options['num_workers'] = '10'
+    options['gpus'] = '0'
+    options['num_workers'] = '8'
     with open(path, 'r') as fp:
         lines = fp.readlines()
     for line in lines:
