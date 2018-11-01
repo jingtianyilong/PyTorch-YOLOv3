@@ -8,9 +8,10 @@ from torch.autograd import Variable
 import numpy as np
 import cv2
 
+
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-
+from kittiloader import *
 
 def load_classes(path):
     """
@@ -125,7 +126,7 @@ def bbox_iou_numpy(box1, box2):
     return intersection / ua
 
 
-def non_max_suppression(prediction, num_classes=80, conf_thres=0.5, nms_thres=0.4):
+def non_max_suppression(prediction, num_classes=80, conf_thres=0.5, nms_thres=0.45):
     """
     Removes detections with lower object confidence score than 'conf_thres' and performs
     Non-Maximum Suppression to further filter detections.
@@ -258,116 +259,6 @@ def to_categorical(y, num_classes):
     """ 1-hot encodes a tensor """
     return torch.from_numpy(np.eye(num_classes, dtype="uint8")[y])
 
-# def write_results(prediction, confidence, num_classes, nms_conf = 0.4):
-#     '''
-#     Perform non maximal suppression
-#     :param prediction: prediction matrix
-#     :param confidence: confidence threshold
-#     :param num_classes: number of classes
-#     :param nms_conf:
-#     :return:     Returns detections with shape:(x1, y1, x2, y2, object_conf, class_score, class_pred)
-#     '''
-#
-#     conf_mask = (prediction[:,:,4] > confidence).float().unsqueeze(2)
-#     prediction = prediction*conf_mask
-#
-#     box_corner = prediction.new(prediction.shape)
-#     # From (center x, center y, width, height, confidence) to (x1, y1, x2, y2, confidence)
-#     box_corner[:,:,0] = (prediction[:,:,0] - prediction[:,:,2]/2)
-#     box_corner[:,:,1] = (prediction[:,:,1] - prediction[:,:,3]/2)
-#     box_corner[:,:,2] = (prediction[:,:,0] + prediction[:,:,2]/2)
-#     box_corner[:,:,3] = (prediction[:,:,1] + prediction[:,:,3]/2)
-#     prediction[:,:,:4] = box_corner[:,:,:4]
-#     # prediction is using x,y,w,h to describe the boundingbox, convert to the 4 corner point
-#
-#     batch_size = prediction.size(0)
-#
-#     write = False
-#
-#
-#     for ind in range(batch_size):
-#         image_pred = prediction[ind]          #image Tensor
-#        #confidence threshholding
-#        #NMS
-#
-#         max_conf, max_conf_score = torch.max(image_pred[:,5:5+ num_classes], 1)
-#         # torch.max(input) return the max value
-#         # torch.max(input, dim, keepdim=False, out=None) return (max value, max value index)
-#         # dim=0 search max as column, return index of the row
-#         # dim =1 search max as row， return index of the column
-#         max_conf = max_conf.float().unsqueeze(1) # transform +1 dimension. 3 dimension
-#         max_conf_score = max_conf_score.float().unsqueeze(1)
-#         seq = (image_pred[:,:5], max_conf, max_conf_score) # (5+1+1)
-#         image_pred = torch.cat(seq, 1)
-#         # torch.cat combine seq together. dim indicated in which direction are concatenated.
-#         # dim=0 generate more row, dim=1 generate more column
-#
-#         non_zero_ind =  (torch.nonzero(image_pred[:,4]))
-#         try:
-#             image_pred_ = image_pred[non_zero_ind.squeeze(),:].view(-1,7)
-#             # view() convert the tensor to different size. with 7column but don't know how many rows.
-#         except:
-#             continue
-#
-#         if image_pred_.shape[0] == 0:
-#             continue
-# #
-#
-#         #Get the various classes detected in the image
-#         img_classes = unique(image_pred_[:,-1])  # -1 index holds the class index
-#         # sort and remove duplicate element.
-#
-#         for cls in img_classes:
-#             #perform NMS
-#
-#
-#             #get the detections with one particular class
-#             cls_mask = image_pred_*(image_pred_[:,-1] == cls).float().unsqueeze(1) # filter out the object of class cls
-#             class_mask_ind = torch.nonzero(cls_mask[:,-2]).squeeze()
-#             # indeces of nunzero element. output zxn. n=input_dim, z=num_nun_zero_element
-#             image_pred_class = image_pred_[class_mask_ind].view(-1,7)
-#
-#             #sort the detections such that the entry with the maximum objectness
-#             #confidence is at the top
-#             conf_sort_index = torch.sort(image_pred_class[4,:], descending=True)[1]
-#             print('\nsize of sonf_sort_index: ', conf_sort_index.size())
-#             print('\nsize of image_pred_class: ', image_pred.size())
-#             image_pred_class = image_pred_class[conf_sort_index]
-#             idx = image_pred_class.size(0)   #Number of detections
-#
-#             for i in range(idx):
-#                 #Get the IOUs of all boxes that come after the one we are looking at
-#                 #in the loop
-#                 try:
-#                     ious = bbox_iou(image_pred_class[i].unsqueeze(0), image_pred_class[i+1:])
-#                 except ValueError:
-#                     break
-#
-#                 except IndexError:
-#                     break
-#
-#                 #Zero out all the detections that have IoU > treshhold
-#                 iou_mask = (ious < nms_conf).float().unsqueeze(1)
-#                 image_pred_class[i+1:] *= iou_mask
-#
-#                 #Remove the non-zero entries
-#                 non_zero_ind = torch.nonzero(image_pred_class[:,4]).squeeze()
-#                 image_pred_class = image_pred_class[non_zero_ind].view(-1,7)
-#
-#             batch_ind = image_pred_class.new(image_pred_class.size(0), 1).fill_(ind)      #Repeat the batch_id for as many detections of the class cls in the image
-#             seq = batch_ind, image_pred_class
-#
-#             if not write:
-#                 output = torch.cat(seq,1)
-#                 write = True
-#             else:
-#                 out = torch.cat(seq,1)
-#                 output = torch.cat((output,out)) # default dim=0
-#     try:
-#         return output
-#     except:
-#         return 0
-
 def letterbox_image(img, input_dim):
     '''resize image with unchanged aspect ratio using padding'''
 
@@ -414,3 +305,70 @@ def unique(tensor):
     tensor_res = tensor.new(unique_tensor.shape)
     tensor_res.copy_(unique_tensor)
     return tensor_res
+
+def get_frustum_point(img_id, input_image, detections, kitti_path):
+    lidar_path = kitti_path + 'training/velodyne/' + img_id + ".bin"
+    point_cloud = np.fromfile(lidar_path, dtype=np.float32).reshape(-1, 4)
+    orig_point_cloud = point_cloud
+
+    # remove points that are located behind the camera:
+    point_cloud = point_cloud[point_cloud[:, 0] > 0, :]
+    # remove points that are located too far away from the camera:
+    point_cloud = point_cloud[point_cloud[:, 0] < 80, :]
+
+    # # # # # debug visualization:
+    # pcd = PointCloud()
+    # pcd.points = Vector3dVector(point_cloud[:, 0:3])
+    # pcd.paint_uniform_color([0.65, 0.65, 0.65])
+    # draw_geometries_dark_background([pcd])
+    # # # # #
+
+    calib = calibread(kitti_path + 'training/calib/' + img_id + ".txt")
+    P2 = calib["P2"] # 3x4 matris projection matrix after rectification
+    # （u,v,1） = dot(P2, (x,y,z,1))
+    Tr_velo_to_cam_orig = calib["Tr_velo_to_cam"]
+    R0_rect_orig = calib["R0_rect"] # 3x3
+
+    R0_rect = np.eye(4)
+    R0_rect[0:3, 0:3] = R0_rect_orig # 3x3 -> 4x4 up left corner
+    ########################################################################
+    # R0_rect: example
+    # array([[ 0.99, 0.01, 0.01,   0 ],
+    #        [ 0.01, 0.99, 0.01,   0 ],
+    #        [ 0.01, 0.01, 0.99,   0 ],
+    #        [    0,    0,    0,   1 ]])
+    ########################################################################
+
+    Tr_velo_to_cam = np.eye(4)
+    Tr_velo_to_cam[0:3, :] = Tr_velo_to_cam_orig # 3x4 -> 4x4 up left corner
+    ########################################################################
+    # Tr_velo_to_cam:
+    # Tr_velo_to_cam = [ R_velo_to_cam,    t_velo_to_cam ]
+    #                  [             0,                1 ]
+    # Rotation matrix velo -> camera 3x3, translation vector velo ->camera 1x3
+    ########################################################################
+
+    point_cloud_xyz = point_cloud[:, 0:3] # num_point x 4 (x,y,z,reflectance) reflectance don't need
+    point_cloud_xyz_hom = np.ones((point_cloud.shape[0], 4))
+    point_cloud_xyz_hom[:, 0:3] = point_cloud[:, 0:3] # (point_cloud_xyz_hom has shape (num_points, 4))
+    # the 4th column are all 1
+
+    # project the points onto the image plane (homogeneous coords):
+    img_points_hom = np.dot(P2, np.dot(R0_rect, np.dot(Tr_velo_to_cam, point_cloud_xyz_hom.T))).T # (point_cloud_xyz_hom.T has shape (4, num_points))
+    # (U,V,_) = P2 * R0_rect * Tr_velo_to_cam * point_cloud_xyz_hom
+    # normalize: (U,V,1)
+    img_points = np.zeros((img_points_hom.shape[0], 2))
+    img_points[:, 0] = img_points_hom[:, 0]/img_points_hom[:, 2]
+    img_points[:, 1] = img_points_hom[:, 1]/img_points_hom[:, 2]
+
+    # transform the points into (rectified) camera coordinates:
+    point_cloud_xyz_camera_hom = np.dot(R0_rect, np.dot(Tr_velo_to_cam, point_cloud_xyz_hom.T)).T # (point_cloud_xyz_hom.T has shape (4, num_points))
+    # normalize: (x,y,z,1)
+    point_cloud_xyz_camera = np.zeros((point_cloud_xyz_camera_hom.shape[0], 3))
+    point_cloud_xyz_camera[:, 0] = point_cloud_xyz_camera_hom[:, 0]/point_cloud_xyz_camera_hom[:, 3]
+    point_cloud_xyz_camera[:, 1] = point_cloud_xyz_camera_hom[:, 1]/point_cloud_xyz_camera_hom[:, 3]
+    point_cloud_xyz_camera[:, 2] = point_cloud_xyz_camera_hom[:, 2]/point_cloud_xyz_camera_hom[:, 3]
+
+    point_cloud_camera = point_cloud
+    point_cloud_camera[:, 0:3] = point_cloud_xyz_camera # reserve reflection
+    return frustum_point_cloud
