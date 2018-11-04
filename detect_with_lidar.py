@@ -75,9 +75,12 @@ for batch_i, (img_paths, input_imgs) in enumerate(dataloader):
         # 有一些任务，可能事先需要设置，事后做清理工作。对于这种场景，Python的with语句提供了一种非常方便的处理方式。一个很好的例子是文件处理，你需要获取一个文件句柄，从文件中读取数据，然后关闭文件句柄。基本思想是with所求值的对象必须有一个__enter__()方法，一个__exit__()方法。紧跟with后面的语句被求值后，返回对象的__enter__()方法被调用，这个方法的返回值将被赋值给as后面的变量。当with后面的代码块全部被执行完之后，将调用前面返回对象的__exit__()方法。
 
     #  TODO: img_index -> lidar_index -> lidar filter.
-    for detection in detections：
-        detection.
-    frustum_point_cloud = get_frustum_point(batch_i, input_imgs, detections, opt.kitti_path)
+    # add one column to for distance of the object
+    detections_with_distance = np.zeros(detections.shape[0],detections.shape[1]+1)
+    detections_with_distance[:,:-1] = detections
+
+    for detection in detections_with_distance:    
+        frustum_point_cloud = get_frustum_point(batch_i, input_imgs, detections, opt.kitti_path)
 
 
     # Log progress
@@ -120,7 +123,7 @@ for img_i, (path, detections) in enumerate(zip(imgs, img_detections)):
         unique_labels = detections[:, -1].cpu().unique()
         n_cls_preds = len(unique_labels)
         bbox_colors = random.sample(colors, n_cls_preds)
-        for x1, y1, x2, y2, conf, cls_conf, cls_pred in detections:
+        for x1, y1, x2, y2, conf, cls_conf, cls_pred, distance in detections:
 
             print ('\t+ Label: %s, Conf: %.5f' % (classes[int(cls_pred)], cls_conf.item()))
 
@@ -138,7 +141,7 @@ for img_i, (path, detections) in enumerate(zip(imgs, img_detections)):
             # Add the bbox to the plot
             ax.add_patch(bbox)
             # Add label
-            plt.text(x1, y1, s=classes[int(cls_pred)], color='white', verticalalignment='top',
+            plt.text(x1, y1, s=classes[int(cls_pred)] + ', ' + distance, color='white', verticalalignment='top',
                     bbox={'color': color, 'pad': 0})
 
     # Save generated image with detections

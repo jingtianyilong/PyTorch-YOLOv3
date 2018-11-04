@@ -306,7 +306,7 @@ def unique(tensor):
     tensor_res.copy_(unique_tensor)
     return tensor_res
 
-def get_frustum_point(img_id, input_image, detections, kitti_path):
+def get_frustum_point(img_id, input_image, detection, kitti_path):
     lidar_path = kitti_path + 'training/velodyne/' + img_id + ".bin"
     point_cloud = np.fromfile(lidar_path, dtype=np.float32).reshape(-1, 4)
     orig_point_cloud = point_cloud
@@ -371,4 +371,10 @@ def get_frustum_point(img_id, input_image, detections, kitti_path):
 
     point_cloud_camera = point_cloud
     point_cloud_camera[:, 0:3] = point_cloud_xyz_camera # reserve reflection
+    ########################################################################
+    # XYZ to distance
+    ########################################################################
+
+    
+
     return frustum_point_cloud
