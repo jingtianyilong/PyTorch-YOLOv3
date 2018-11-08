@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 import numpy as np
 import cv2
-
+from sklearn import linear_model, datasets
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -309,12 +309,36 @@ def unique(tensor):
 def get_frustum_point(img_id, input_image, detection, kitti_path):
     lidar_path = kitti_path + 'training/velodyne/' + img_id + ".bin"
     point_cloud = np.fromfile(lidar_path, dtype=np.float32).reshape(-1, 4)
-    orig_point_cloud = point_cloud
+    orig_point_cloud = point_cloud # nx4
+
+    # detections with shape: (x1, y1, x2, y2, object_conf, class_score, class_pred)
+    v_min = min(detection[1],detection[3])
+
+    ########################################################################
+    # Distance rough estimation
+    # D = H [tan(theta_c+arctan((h_i/2-d_p)/(h/(2*tan(alpha/2)))))-tan(theta_c-alpha/2)]
+    # reference：
+    # Computer_Vision_for_Road_Safety_A_System
+    # H         height of the camera(according to kitti is 1.65m)
+    # alpha     angle of FOV in v-axis fv=h_i/(2*tan(alpha/2))
+    # theta_c   angle between camera x-axis and X-axis(pi/2)
+    # h_i       height of the recorded image plane(pixel)(512)
+    # d_p       distance from the bottom of image to the bottom of the bounding box(512-v_min)
+
+    # D = H ×[tan（theta_c+arctan((h_i-d_p)/fv))-tan(theta_c-2*arctan(hi/(2fv)))]
+    #
+    ########################################################################
+    H = 1.65
+    h_i = 416
+    d_p = h_i - v_min
+    fv = P2[5]
+    theta_c = np.pi/2
+    D_rough = H * (np.tan(theta_c + np.arctan((h_i - d_p)/fv)) - np.tan(theta_c - 2*np.arctan(h_i/(2*fv))))
 
     # remove points that are located behind the camera:
-    point_cloud = point_cloud[point_cloud[:, 0] > 0, :]
+    point_cloud = point_cloud[point_cloud[:, 0] > max(0, D_rough - 2), :]
     # remove points that are located too far away from the camera:
-    point_cloud = point_cloud[point_cloud[:, 0] < 80, :]
+    point_cloud = point_cloud[point_cloud[:, 0] < min(80, D_rough + 2), :]
 
     # # # # # debug visualization:
     # pcd = PointCloud()
@@ -348,7 +372,7 @@ def get_frustum_point(img_id, input_image, detection, kitti_path):
     # Rotation matrix velo -> camera 3x3, translation vector velo ->camera 1x3
     ########################################################################
 
-    point_cloud_xyz = point_cloud[:, 0:3] # num_point x 4 (x,y,z,reflectance) reflectance don't need
+    point_cloud_xyz = point_cloud[:, 0:3] # num_point x 3 (x,y,z,reflectance) reflectance don't need
     point_cloud_xyz_hom = np.ones((point_cloud.shape[0], 4))
     point_cloud_xyz_hom[:, 0:3] = point_cloud[:, 0:3] # (point_cloud_xyz_hom has shape (num_points, 4))
     # the 4th column are all 1
@@ -371,10 +395,44 @@ def get_frustum_point(img_id, input_image, detection, kitti_path):
 
     point_cloud_camera = point_cloud
     point_cloud_camera[:, 0:3] = point_cloud_xyz_camera # reserve reflection
+
     ########################################################################
-    # XYZ to distance
+    # point_cloud               n x 4   original xyzr value before cali in velo coordinate
+    # point_cloud_xyz           n x 3   xyz value before cali in velo coordinate
+    # point_cloud_xyz_hom       n x 4   xyz1 in velo coordinate
+    # point_cloud_xyz_camera    n x 4   xyz1 in camera coordinate
+    # point_cloud_camera        n x 4   xyzr in camera coordinate
+    # img_points_hom            n x 3   uv_
+    # img_points                n x 2   UV
     ########################################################################
 
-    
 
-    return frustum_point_cloud
+    row_mask = np.logical_and(
+                    np.logical_and(img_points[:, 0] >= u_min,
+                                   img_points[:, 0] <= u_max),
+                    np.logical_and(img_points[:, 1] >= v_min,
+                                   img_points[:, 1] <= v_max))
+
+    # filter out point are not in frustum area
+    frustum_point_cloud_xyz = point_cloud_xyz[row_mask, :] # (needed only for visualization)
+    frustum_point_cloud = point_cloud[row_mask, :]
+    frustum_point_cloud_xyz_camera = point_cloud_xyz_camera[row_mask, :]
+    frustum_point_cloud_camera = point_cloud_camera[row_mask, :]
+
+    if frustum_point_cloud.shape[0] == 0:
+        print (img_id)
+        print (frustum_point_cloud.shape)
+        return self.__getitem__(0)
+
+    # randomly sample 1024 points in the frustum point cloud:
+    if frustum_point_cloud.shape[0] < 1024:
+        row_idx = np.random.choice(frustum_point_cloud.shape[0], 1024, replace=True)
+    else:
+        row_idx = np.random.choice(frustum_point_cloud.shape[0], 1024, replace=False)
+
+    frustum_point_cloud_xyz_camera = frustum_point_cloud_xyz_camera[row_idx, :]
+    ransac = linear_model.RANSACRegressor()
+    ransac.fit(frustum_point_cloud_xyz_camera[:,1], frustum_point_cloud_xyz_camera[:,0])
+    D_regress = ransac.predict(0.5 * (detection[0] + detection[2]))
+
+    return D_regress
