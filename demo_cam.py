@@ -6,7 +6,8 @@ import torch
 import pickle as pkl
 from models import *
 from utils.utils import *
-from utils.
+from utils.datasets import *
+from utils.kittiloader import *
 
 import numpy as np
 import random
@@ -26,19 +27,19 @@ parser.add_argument('--use_cuda', type=bool, default=True, help='whether to use 
 opt = parser.parse_args()
 print(opt)
 
-# def write(x, results):
-#     c1 = tuple(x[0:2].int())
-#     c2 = tuple(x[2:4].int())
-#     img = results
-#     cls = int(x[-1])
-#     color = random.choice(colors)
-#     label = "{0}".format(classes[cls])
-#     cv2.rectangle(img, c1, c2,(255,0,0), 2)
-#     t_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_PLAIN, 1 , 1)[0]
-#     c2 = c1[0] + t_size[0] + 3, c1[1] + t_size[1] + 4
-#     cv2.rectangle(img, c1, c2,(255,0,0), 2)
-#     cv2.putText(img, label, (c1[0], c1[1] + t_size[1] + 4), cv2.FONT_HERSHEY_PLAIN, 1, [225,255,255], 1);
-#     return img
+def write(x, results):
+    c1 = tuple(x[0:2].int())
+    c2 = tuple(x[2:4].int())
+    img = results
+    cls = int(x[-1])
+    color = random.choice(colors)
+    label = "{0}".format(classes[cls])
+    cv2.rectangle(img, c1, c2,(255,0,0), 4)
+    t_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_DUPLEX, 1 , 1)[0]
+    c2 = c1[0] + t_size[0] + 5, c1[1] + t_size[1] + 6
+    cv2.rectangle(img, c1, c2,(255,0,0), -1)
+    cv2.putText(img, label, (c1[0], c1[1] + t_size[1] + 4), cv2.FONT_HERSHEY_DUPLEX, 1, [225,255,255], 1);
+    return img
 
 CUDA = torch.cuda.is_available() and opt.use_cuda
 # os.makedirs('output', exist_ok=True)

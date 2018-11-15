@@ -26,9 +26,9 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--image_folder', type=str, default='data/samples/samples/', help='path to dataset')
 parser.add_argument('--config_path', type=str, default='config/v390.cfg', help='path to model config file')
 parser.add_argument('--weights_path', type=str, default='weights/v390_280000.weights', help='path to weights file')
-parser.add_argument('--kitti_path', type=str, default='/home/zijieguo/project/velodyne/' help='path to kitti path')
+parser.add_argument('--kitti_path', type=str, default='/home/zijieguo/project/data_object_velodyne/', help='path to kitti path')
 parser.add_argument('--class_path', type=str, default='data/coco.names', help='path to class label file')
-parser.add_argument('--conf_thres', type=float, default=0.8, help='object confidence threshold')
+parser.add_argument('--conf_thres', type=float, default=0.2, help='object confidence threshold')
 parser.add_argument('--nms_thres', type=float, default=0.4, help='iou thresshold for non-maximum suppression')
 parser.add_argument('--batch_size', type=int, default=1, help='size of the batches')
 parser.add_argument('--n_cpu', type=int, default=8, help='number of cpu threads to use during batch generation')
@@ -37,23 +37,25 @@ parser.add_argument('--use_cuda', type=bool, default=True, help='whether to use 
 opt = parser.parse_args()
 print(opt)
 
-CUDA = torch.cuda.is_available() and opt.use_cuda
+CUDA_available = torch.cuda.is_available() and opt.use_cuda
 model = Darknet(opt.config_path, img_size=opt.img_size)
 model.load_weights(opt.weights_path)
 input_dim = opt.img_size
 
-if CUDA:
+if CUDA_available:
     model.cuda()
 
 model.eval()
 
-dataloader = DataLoader(ImageFolder( opt.kitti_path + '', img_size=opt.img_size),
+# dataloader = DataLoader(ImageFolder( opt.kitti_path + 'testing/image_2', img_size=opt.img_size),
+#                         batch_size=opt.batch_size, shuffle=False, num_workers=opt.n_cpu)
+dataloader = DataLoader(ImageFolder(opt.image_folder, img_size=opt.img_size),
                         batch_size=opt.batch_size, shuffle=False, num_workers=opt.n_cpu)
 
 classes = load_classes(opt.class_path)
 # TODO: different class file for 
 
-Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
+Tensor = torch.cuda.FloatTensor if CUDA_available else torch.FloatTensor
 
 
 imgs = []           # Stores image paths
@@ -70,23 +72,25 @@ for batch_i, (img_paths, input_imgs) in enumerate(dataloader):
 
     # Get detections
     with torch.no_grad():
-        detections = model(input_imgs)
+        detections = model(input_imgs) # size 1x10647x85
         detections = non_max_suppression(detections, 80, opt.conf_thres, opt.nms_thres)
         # 有一些任务，可能事先需要设置，事后做清理工作。对于这种场景，Python的with语句提供了一种非常方便的处理方式。一个很好的例子是文件处理，你需要获取一个文件句柄，从文件中读取数据，然后关闭文件句柄。基本思想是with所求值的对象必须有一个__enter__()方法，一个__exit__()方法。紧跟with后面的语句被求值后，返回对象的__enter__()方法被调用，这个方法的返回值将被赋值给as后面的变量。当with后面的代码块全部被执行完之后，将调用前面返回对象的__exit__()方法。
 
+    detections = torch.cat(detections)
+
     #  TODO: img_index -> lidar_index -> lidar filter.
     # add one column to for distance of the object
-    detections_with_distance = np.zeros(detections.shape[0],detections.shape[1]+1)
+    detections_with_distance = np.zeros(detections[0].shape[2],detections[0].shape[1]+1)
     detections_with_distance[:,:-1] = detections
 
-    for detection in detections_with_distance:    
-        frustum_point_cloud = get_frustum_point(batch_i, input_imgs, detections, opt.kitti_path)
+    for detection in detections_with_distance:
+        detection = get_frustum_point_distance(batch_i, input_imgs, detections, opt.kitti_path)
 
 
     # Log progress
     current_time = time.time()
     inference_time = datetime.timedelta(seconds=current_time - prev_time)
-        print('\t+ Batch %d, Inference Time: %s, reletively FPS: %s frames/s' % (batch_i, inference_time, 1/inference_time))
+    print('\t+ Batch %d, Inference Time: %s, reletively FPS: %s frames/s' % (batch_i, inference_time, 1/float(inference_time)))
 
     # Save image and detections
     imgs.extend(img_paths)

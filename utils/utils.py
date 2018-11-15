@@ -11,7 +11,7 @@ from sklearn import linear_model, datasets
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-from kittiloader import *
+from utils.kittiloader import *
 
 def load_classes(path):
     """
@@ -183,6 +183,7 @@ def non_max_suppression(prediction, num_classes=80, conf_thres=0.5, nms_thres=0.
                 max_detections if output[image_i] is None else torch.cat((output[image_i], max_detections))
             )
 
+
     return output
 
 
@@ -265,7 +266,7 @@ def letterbox_image(img, input_dim):
     # img is a large array with rgb data
     img_w, img_h = img.shape[1], img.shape[0]
     w, h = input_dim
-    new_w = int(img_w * min(w/img_w, h/img_h))
+    new_w = int(img_w* min(w/img_w, h/img_h))
     new_h = int(img_h * min(w/img_w, h/img_h))
     # calculate the actual size of the image wrt. input_dim
     resized_image = cv2.resize(img, (new_w,new_h), interpolation = cv2.INTER_CUBIC)
@@ -306,7 +307,7 @@ def unique(tensor):
     tensor_res.copy_(unique_tensor)
     return tensor_res
 
-def get_frustum_point(img_id, input_image, detection, kitti_path):
+def get_frustum_point_distance(img_id, input_image, detection, kitti_path):
     lidar_path = kitti_path + 'training/velodyne/' + img_id + ".bin"
     point_cloud = np.fromfile(lidar_path, dtype=np.float32).reshape(-1, 4)
     orig_point_cloud = point_cloud # nx4
@@ -419,11 +420,6 @@ def get_frustum_point(img_id, input_image, detection, kitti_path):
     frustum_point_cloud_xyz_camera = point_cloud_xyz_camera[row_mask, :]
     frustum_point_cloud_camera = point_cloud_camera[row_mask, :]
 
-    if frustum_point_cloud.shape[0] == 0:
-        print (img_id)
-        print (frustum_point_cloud.shape)
-        return self.__getitem__(0)
-
     # randomly sample 1024 points in the frustum point cloud:
     if frustum_point_cloud.shape[0] < 1024:
         row_idx = np.random.choice(frustum_point_cloud.shape[0], 1024, replace=True)
@@ -433,6 +429,6 @@ def get_frustum_point(img_id, input_image, detection, kitti_path):
     frustum_point_cloud_xyz_camera = frustum_point_cloud_xyz_camera[row_idx, :]
     ransac = linear_model.RANSACRegressor()
     ransac.fit(frustum_point_cloud_xyz_camera[:,1], frustum_point_cloud_xyz_camera[:,0])
-    D_regress = ransac.predict(0.5 * (detection[0] + detection[2]))
+    detection[4] = ransac.predict(0.5 * (detection[0] + detection[2]))
 
-    return D_regress
+    return detection
