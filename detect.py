@@ -21,7 +21,7 @@ from matplotlib.ticker import NullLocator
 import time
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--image_folder', type=str, default='data/samples/samples/', help='path to dataset')
+parser.add_argument('--image_folder', type=str, default='examples/', help='path to dataset')
 parser.add_argument('--config_path', type=str, default='config/v390.cfg', help='path to model config file')
 parser.add_argument('--weights_path', type=str, default='weights/v390_280000.weights', help='path to weights file')
 parser.add_argument('--class_path', type=str, default='data/coco.names', help='path to class label file')
@@ -78,7 +78,7 @@ for batch_i, (img_paths, input_imgs) in enumerate(dataloader):
     # Log progress
     current_time = time.time()
     inference_time = datetime.timedelta(seconds=current_time - prev_time)
-        print('\t+ Batch %d, Inference Time: %s, reletively FPS: %s frames/s' % (batch_i, inference_time, 1/inference_time))
+    print('\t+ Batch %d, Inference Time: %s, reletively FPS: %s frames/s' % (batch_i, inference_time, 1/inference_time.total_seconds()))
 
     # Save image and detections
     imgs.extend(img_paths)
@@ -115,10 +115,10 @@ for img_i, (path, detections) in enumerate(zip(imgs, img_detections)):
         unique_labels = detections[:, -1].cpu().unique()
         n_cls_preds = len(unique_labels)
         bbox_colors = random.sample(colors, n_cls_preds)
+        print(detections)
         for x1, y1, x2, y2, conf, cls_conf, cls_pred in detections:
 
-            print ('\t+ Label: %s, Conf: %.5f' % (classes[int(cls_pred)], cls_conf.item()))
-
+            # print ('\t+ Label: %s, Conf: %.5f' % (classes[int(cls_pred)], cls_conf.item()))
             # Rescale coordinates to original dimensions
             box_h = ((y2 - y1) / unpad_h) * img.shape[0]
             box_w = ((x2 - x1) / unpad_w) * img.shape[1]

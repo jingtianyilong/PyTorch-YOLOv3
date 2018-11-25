@@ -11,6 +11,7 @@ import sys
 import time
 import datetime
 import argparse
+import numpy as np
 
 import torch
 from torch.utils.data import DataLoader
@@ -23,12 +24,12 @@ from matplotlib.ticker import NullLocator
 import time
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--image_folder', type=str, default='data/samples/samples/', help='path to dataset')
+parser.add_argument('--image_folder', type=str, default='examples/', help='path to dataset')
 parser.add_argument('--config_path', type=str, default='config/v390.cfg', help='path to model config file')
 parser.add_argument('--weights_path', type=str, default='weights/v390_280000.weights', help='path to weights file')
 parser.add_argument('--kitti_path', type=str, default='/home/zijieguo/project/data_object_velodyne/', help='path to kitti path')
 parser.add_argument('--class_path', type=str, default='data/coco.names', help='path to class label file')
-parser.add_argument('--conf_thres', type=float, default=0.2, help='object confidence threshold')
+parser.add_argument('--conf_thres', type=float, default=0.8, help='object confidence threshold')
 parser.add_argument('--nms_thres', type=float, default=0.4, help='iou thresshold for non-maximum suppression')
 parser.add_argument('--batch_size', type=int, default=1, help='size of the batches')
 parser.add_argument('--n_cpu', type=int, default=8, help='number of cpu threads to use during batch generation')
@@ -38,6 +39,9 @@ opt = parser.parse_args()
 print(opt)
 
 CUDA_available = torch.cuda.is_available() and opt.use_cuda
+
+os.makedirs('output', exist_ok=True)
+
 model = Darknet(opt.config_path, img_size=opt.img_size)
 model.load_weights(opt.weights_path)
 input_dim = opt.img_size
@@ -65,6 +69,7 @@ print('starting time: ', start_time)
 print ('\nPerforming object detection:')
 prev_time = time.time()
 for batch_i, (img_paths, input_imgs) in enumerate(dataloader):
+
     # Configure input
     input_imgs = Variable(input_imgs.type(Tensor))
     # Viriable API has been deprecated. Viriable(tensor) return Tensors instead of Variable
@@ -80,21 +85,20 @@ for batch_i, (img_paths, input_imgs) in enumerate(dataloader):
 
     #  TODO: img_index -> lidar_index -> lidar filter.
     # add one column to for distance of the object
-    detections_with_distance = np.zeros(detections[0].shape[2],detections[0].shape[1]+1)
+    detections_with_distance = np.zeros((detections.shape[0],detections.shape[1]+1))
     detections_with_distance[:,:-1] = detections
 
     for detection in detections_with_distance:
-        detection = get_frustum_point_distance(batch_i, input_imgs, detections, opt.kitti_path)
-
+        detection = get_frustum_point_distance(batch_i, img_paths, detection, opt.kitti_path, opt.img_size)
 
     # Log progress
     current_time = time.time()
     inference_time = datetime.timedelta(seconds=current_time - prev_time)
-    print('\t+ Batch %d, Inference Time: %s, reletively FPS: %s frames/s' % (batch_i, inference_time, 1/float(inference_time)))
+    print('\t+ Batch %d, Inference Time: %s, reletively FPS: %s frames/s' % (batch_i, inference_time, 1/(inference_time.total_seconds())))
 
     # Save image and detections
     imgs.extend(img_paths)
-    img_detections.extend(detections)
+    img_detections.extend(detections_with_distance)
     prev_time = current_time
 
 # Bounding-box colors
@@ -124,13 +128,12 @@ for img_i, (path, detections) in enumerate(zip(imgs, img_detections)):
 
     # Draw bounding boxes and labels of detections
     if detections is not None:
-        unique_labels = detections[:, -1].cpu().unique()
+        unique_labels = detections[:, -2].cpu().unique()
         n_cls_preds = len(unique_labels)
         bbox_colors = random.sample(colors, n_cls_preds)
         for x1, y1, x2, y2, conf, cls_conf, cls_pred, distance in detections:
 
-            print ('\t+ Label: %s, Conf: %.5f' % (classes[int(cls_pred)], cls_conf.item()))
-
+            # print ('\t+ Label: %s, Conf: %.5f' % (classes[int(cls_pred)], cls_conf.item()))
             # Rescale coordinates to original dimensions
             box_h = ((y2 - y1) / unpad_h) * img.shape[0]
             box_w = ((x2 - x1) / unpad_w) * img.shape[1]
