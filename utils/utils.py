@@ -308,10 +308,12 @@ def unique(tensor):
     return tensor_res
 
 def get_frustum_point_distance(img_id, img_path, detection, kitti_path, img_size_after_resize):
-    img_id = 46
+    detection = detection.numpy()
+    # img_id = 46
     lidar_path = '%straining/velodyne/%06d.bin' % (kitti_path, img_id)
     calib = calibread('%straining/calib/%06d.txt' % (kitti_path, img_id))
-    img = cv2.imread('/home/zijieguo/project/PyTorch-YOLOv3/examples/000000.png', cv2.IMREAD_UNCHANGED)
+    # img = cv2.imread('/home/zijieguo/project/PyTorch-YOLOv3/examples/000000.png', cv2.IMREAD_UNCHANGED)
+    img = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
     img_width_orig = img.shape[1]
     img_height_orig = img.shape[0]
 
@@ -445,7 +447,7 @@ def get_frustum_point_distance(img_id, img_path, detection, kitti_path, img_size
 
         if frustum_point_cloud.shape[0] == 0:
              detection[7] = D_rough
-             return detection
+             return torch.tensor(detection)
         elif frustum_point_cloud.shape[0] < 512:
             row_idx = np.random.choice(frustum_point_cloud.shape[0], 512, replace=True)
         else:
@@ -457,9 +459,9 @@ def get_frustum_point_distance(img_id, img_path, detection, kitti_path, img_size
         y_mid =  0.5 * (frustum_point_cloud_xyz_camera[:,1].max() + frustum_point_cloud_xyz_camera[:,1].min())
         detection[7] = ransac.predict([[y_mid]])[0][0]
 
-        return detection
+        return torch.tensor(detection)
 
     else:# might be a problem
         detection[7] = float('nan')
-        return detection
+        return torch.tensor(detection)
 

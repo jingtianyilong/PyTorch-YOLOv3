@@ -81,24 +81,27 @@ for batch_i, (img_paths, input_imgs) in enumerate(dataloader):
         detections = non_max_suppression(detections, 80, opt.conf_thres, opt.nms_thres)
         # 有一些任务，可能事先需要设置，事后做清理工作。对于这种场景，Python的with语句提供了一种非常方便的处理方式。一个很好的例子是文件处理，你需要获取一个文件句柄，从文件中读取数据，然后关闭文件句柄。基本思想是with所求值的对象必须有一个__enter__()方法，一个__exit__()方法。紧跟with后面的语句被求值后，返回对象的__enter__()方法被调用，这个方法的返回值将被赋值给as后面的变量。当with后面的代码块全部被执行完之后，将调用前面返回对象的__exit__()方法。
 
-    detections = torch.cat(detections)
+    # detections = torch.cat(detections)
 
     #  TODO: img_index -> lidar_index -> lidar filter.
     # add one column to for distance of the object
-    detections_with_distance = np.zeros((detections.shape[0],detections.shape[1]+1))
-    detections_with_distance[:,:-1] = detections
+    # detections_with_distance = np.zeros((detections[0].shape[0],detections[0].shape[1]+1))
+    detections_with_distance = torch.zeros((detections[0].shape[0],detections[0].shape[1]+1))
+
+    detections_with_distance[:,:-1] = detections[0]
 
     for detection in detections_with_distance:
         detection = get_frustum_point_distance(batch_i, img_paths, detection, opt.kitti_path, opt.img_size)
 
+    detections[0] = detections_with_distance
     # Log progress
     current_time = time.time()
     inference_time = datetime.timedelta(seconds=current_time - prev_time)
-    print('\t+ Batch %d, Inference Time: %s, reletively FPS: %s frames/s' % (batch_i, inference_time, 1/(inference_time.total_seconds())))
+    print('\t+ Batch %d, Inference Time: %s, reletively s' % (batch_i, inference_time, 1/(inference_time.total_seconds())))
 
     # Save image and detections
     imgs.extend(img_paths)
-    img_detections.extend(detections_with_distance)
+    img_detections.extend(detections)
     prev_time = current_time
 
 # Bounding-box colors
@@ -133,7 +136,7 @@ for img_i, (path, detections) in enumerate(zip(imgs, img_detections)):
         bbox_colors = random.sample(colors, n_cls_preds)
         for x1, y1, x2, y2, conf, cls_conf, cls_pred, distance in detections:
 
-            # print ('\t+ Label: %s, Conf: %.5f' % (classes[int(cls_pred)], cls_conf.item()))
+            print ('\t+ Label: %s, Conf: %.5f  Dist: %.5f' % (classes[int(cls_pred)], cls_conf.item(), distance))
             # Rescale coordinates to original dimensions
             box_h = ((y2 - y1) / unpad_h) * img.shape[0]
             box_w = ((x2 - x1) / unpad_w) * img.shape[1]
@@ -148,7 +151,7 @@ for img_i, (path, detections) in enumerate(zip(imgs, img_detections)):
             # Add the bbox to the plot
             ax.add_patch(bbox)
             # Add label
-            plt.text(x1, y1, s=classes[int(cls_pred)] + ', ' + distance, color='white', verticalalignment='top',
+            plt.text(x1, y1, s=classes[int(cls_pred)] + ', %.5f' % distance, color='white', verticalalignment='top',
                     bbox={'color': color, 'pad': 0})
 
     # Save generated image with detections
