@@ -393,7 +393,7 @@ class DatasetFrustumPointNetAugmentation(torch.utils.data.Dataset):
         centered_frustum_point_cloud_camera[:, 0:3] = rot_centered_frustum_point_cloud_xyz_camera
 
         ########################################################################
-        # BboxNet ground truth:
+        # BboxNet ground truth:arctan
         ########################################################################
         centered_r_y = wrapToPi(label_3D['r_y'] - frustum_angle)
         # flip the angle if flip == 1:
