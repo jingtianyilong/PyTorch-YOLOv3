@@ -121,6 +121,7 @@ class YOLOLayer(nn.Module):
         self.ce_loss = nn.CrossEntropyLoss()  # Class loss
 
     def forward(self, x, targets=None):
+        # forward should overwrite the original Module Class's forward funtion, which is empty. No forward function will raise error
         nA = self.num_anchors
         nB = x.size(0)
         nG = x.size(2)
@@ -132,13 +133,17 @@ class YOLOLayer(nn.Module):
         ByteTensor = torch.cuda.ByteTensor if x.is_cuda else torch.ByteTensor
 
         prediction = x.view(nB, nA, self.bbox_attrs, nG, nG).permute(0, 1, 3, 4, 2).contiguous()
+        # view return the x in different size
+        # permute actually change the order of the columns
+        # 
 
         # Get outputs
         x = torch.sigmoid(prediction[..., 0])  # Center x
         y = torch.sigmoid(prediction[..., 1])  # Center y
         w = prediction[..., 2]  # Width
         h = prediction[..., 3]  # Height
-        pred_conf = torch.sigmoid(prediction[..., 4])  # Conf
+        # why linear activcation
+        pred_conf = torch.sigmoid(prediction[..., 4])   # Conf
         pred_cls = torch.sigmoid(prediction[..., 5:])  # Cls pred.
 
         # Calculate offsets for each grid
@@ -204,8 +209,8 @@ class YOLOLayer(nn.Module):
             loss_conf = self.bce_loss(pred_conf[conf_mask_false], tconf[conf_mask_false]) + self.bce_loss(
                 pred_conf[conf_mask_true], tconf[conf_mask_true]
             )
-            loss_cls = (1 / nB) * self.ce_loss(pred_cls[mask], torch.argmax(tcls[mask], 1))
-            loss = loss_x + loss_y + loss_w + loss_h + loss_conf + loss_cls
+            loss_cls = (1 / nB) * self.ce_loss(pred_cls[mask], torch.argmax(tcls[mask], 1)) ###
+            loss = loss_x + loss_y + loss_w + loss_h + loss_conf + loss_cls  ###
 
             return (
                 loss,
@@ -254,7 +259,7 @@ class Darknet(nn.Module):
                 x = module(x)
             elif module_def["type"] == "route":
                 layer_i = [int(x) for x in module_def["layers"].split(",")]
-                x = torch.cat([layer_outputs[i] for i in layer_i], 1)
+                x = torch.cat([layer_outputs[i] for i in layer_i], 1) 
             elif module_def["type"] == "shortcut":
                 layer_i = int(module_def["from"])
                 x = layer_outputs[-1] + layer_outputs[layer_i]
