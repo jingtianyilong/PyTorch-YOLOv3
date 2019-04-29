@@ -21,10 +21,14 @@ import torch.optim as optim
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--batch_size", type=int, default=16, help="size of each image batch")
-parser.add_argument("--model_config_path", type=str, default="/home/zijieguo/project/darknet/cfg/tiny25.cfg", help="path to model config file")
-parser.add_argument("--data_config_path", type=str, default="config/coco.data", help="path to data config file")
-parser.add_argument("--weights_path", type=str, default="/home/zijieguo/project/darknet/backup/tiny25_final.weights", help="path to weights file")
-# parser.add_argument("--weights_path", type=str, default="checkpoints/29.weights", help="path to weights file")
+parser.add_argument("--model_config_path", type=str, default="/home/project/ZijieMA/darknet/cfg/v390.cfg", help="path to model config file")
+# /home/project/ZijieMA/darknet/cfg/v390.cfg
+# /home/project/ZijieMA/darknet/cfg/yolov3.weights
+parser.add_argument("--data_config_path", type=str, default="/home/project/ZijieMA/darknet/cfg/coco.data", help="path to data config file")
+# /home/project/ZijieMA/darknet/cfg/coco.data
+parser.add_argument("--weights_path", type=str, default="/home/project/ZijieMA/darknet/backup/v390_final.weights", help="path to weights file")
+# /home/project/ZijieMA/darknet/backup/v390_final.weights
+# /home/project/ZijieMA/darknet/yolov3.weights
 parser.add_argument("--class_path", type=str, default="data/coco.names", help="path to class label file")
 parser.add_argument("--iou_thres", type=float, default=0.5, help="iou threshold required to qualify as detected")
 parser.add_argument("--conf_thres", type=float, default=0.2, help="object confidence threshold")
