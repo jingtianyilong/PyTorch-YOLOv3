@@ -70,6 +70,7 @@ start_time = time.time()
 print('starting time: ', start_time)
 print ('\nPerforming object detection:')
 prev_time = time.time()
+inference_time = datetime.timedelta(seconds=prev_time - prev_time)
 for batch_i, (img_paths, input_imgs) in enumerate(dataloader):
 
     # Configure input
@@ -93,7 +94,7 @@ for batch_i, (img_paths, input_imgs) in enumerate(dataloader):
     #  TODO: img_index -> lidar_index -> lidar filter.
     # add one column to for distance of the object
     # detections_with_distance = np.zeros((detections[0].shape[0],detections[0].shape[1]+1))
-    if detections is not None:
+    if detections[0] is not None:
         detections_with_distance = torch.zeros((detections[0].shape[0],detections[0].shape[1]+1))
 
         detections_with_distance[:,:-1] = detections[0]
@@ -104,7 +105,7 @@ for batch_i, (img_paths, input_imgs) in enumerate(dataloader):
         detections[0] = detections_with_distance
     # Log progress
     current_time = time.time()
-    inference_time = datetime.timedelta(seconds=current_time - prev_time)
+    inference_time += datetime.timedelta(seconds=current_time - prev_time)
     # print('\t+ Batch %d, Inference Time: %s, reletively s' % (batch_i, inference_time, 1/(inference_time.total_seconds())))
 
     # Save image and detections
@@ -115,57 +116,56 @@ for batch_i, (img_paths, input_imgs) in enumerate(dataloader):
 # Bounding-box colors
 cmap = plt.get_cmap('tab20b')
 colors = [cmap(i) for i in np.linspace(0, 1, 20)]
-end_time=time.time()
-print('end time: ', end_time)
-
-print ('\nSaving images:')
-# Iterate through images and save plot of detections
-for img_i, (path, detections) in enumerate(zip(imgs, img_detections)):
-
-    print ("(%d) Image: '%s'" % (img_i, path))
-
-    # Create plot
-    img = np.array(Image.open(path))
-    plt.figure()
-    fig, ax = plt.subplots(1)
-    ax.imshow(img)
-
-    # The amount of padding that was added
-    pad_x = max(img.shape[0] - img.shape[1], 0) * (opt.img_size / max(img.shape))
-    pad_y = max(img.shape[1] - img.shape[0], 0) * (opt.img_size / max(img.shape))
-    # Image height and width after padding is removed
-    unpad_h = opt.img_size - pad_y
-    unpad_w = opt.img_size - pad_x
-
-    # Draw bounding boxes and labels of detections
-    if detections is not None:
-        unique_labels = detections[:, -2].cpu().unique()
-        n_cls_preds = len(unique_labels)
-        bbox_colors = random.sample(colors, n_cls_preds)
-        for x1, y1, x2, y2, conf, cls_conf, cls_pred, distance in detections:
-
-            print ('\t+ Label: %s, Conf: %.5f  Dist: %.5f' % (classes[int(cls_pred)], cls_conf.item(), distance))
-            # Rescale coordinates to original dimensions
-            box_h = ((y2 - y1) / unpad_h) * img.shape[0]
-            box_w = ((x2 - x1) / unpad_w) * img.shape[1]
-            y1 = ((y1 - pad_y // 2) / unpad_h) * img.shape[0]
-            x1 = ((x1 - pad_x // 2) / unpad_w) * img.shape[1]
-
-            color = bbox_colors[int(np.where(unique_labels == int(cls_pred))[0])]
-            # Create a Rectangle patch
-            bbox = patches.Rectangle((x1, y1), box_w, box_h, linewidth=2,
-                                    edgecolor=color,
-                                    facecolor='none')
-            # Add the bbox to the plot
-            ax.add_patch(bbox)
-            # Add label
-            plt.text(x1, y1, s=classes[int(cls_pred)] + ', %.5f' % distance, color='white', verticalalignment='top',
-                    bbox={'color': color, 'pad': 0})
-
-    # Save generated image with detections
-    plt.axis('off')
-    plt.gca().xaxis.set_major_locator(NullLocator())
-    plt.gca().yaxis.set_major_locator(NullLocator())
-    plt.savefig('output/%d.png' % (img_i), bbox_inches='tight', pad_inches=0.0)
-    plt.close()
-print('processing time: %s s, which means %f FPS' %(end_time-start_time, len(imgs)/(end_time-start_time)))
+inference_time = inference_time/batch_i
+#
+# print ('\nSaving images:')
+# # Iterate through images and save plot of detections
+# for img_i, (path, detections) in enumerate(zip(imgs, img_detections)):
+#
+#     print ("(%d) Image: '%s'" % (img_i, path))
+#
+#     # Create plot
+#     img = np.array(Image.open(path))
+#     plt.figure()
+#     fig, ax = plt.subplots(1)
+#     ax.imshow(img)
+#
+#     # The amount of padding that was added
+#     pad_x = max(img.shape[0] - img.shape[1], 0) * (opt.img_size / max(img.shape))
+#     pad_y = max(img.shape[1] - img.shape[0], 0) * (opt.img_size / max(img.shape))
+#     # Image height and width after padding is removed
+#     unpad_h = opt.img_size - pad_y
+#     unpad_w = opt.img_size - pad_x
+#
+#     # Draw bounding boxes and labels of detections
+#     if detections is not None:
+#         unique_labels = detections[:, -2].cpu().unique()
+#         n_cls_preds = len(unique_labels)
+#         bbox_colors = random.sample(colors, n_cls_preds)
+#         for x1, y1, x2, y2, conf, cls_conf, cls_pred, distance in detections:
+#
+#             print ('\t+ Label: %s, Conf: %.5f  Dist: %.5f' % (classes[int(cls_pred)], cls_conf.item(), distance))
+#             # Rescale coordinates to original dimensions
+#             box_h = ((y2 - y1) / unpad_h) * img.shape[0]
+#             box_w = ((x2 - x1) / unpad_w) * img.shape[1]
+#             y1 = ((y1 - pad_y // 2) / unpad_h) * img.shape[0]
+#             x1 = ((x1 - pad_x // 2) / unpad_w) * img.shape[1]
+#
+#             color = bbox_colors[int(np.where(unique_labels == int(cls_pred))[0])]
+#             # Create a Rectangle patch
+#             bbox = patches.Rectangle((x1, y1), box_w, box_h, linewidth=2,
+#                                     edgecolor=color,
+#                                     facecolor='none')
+#             # Add the bbox to the plot
+#             ax.add_patch(bbox)
+#             # Add label
+#             plt.text(x1, y1, s=classes[int(cls_pred)] + ', %.5f' % distance, color='white', verticalalignment='top',
+#                     bbox={'color': color, 'pad': 0})
+#
+#     # Save generated image with detections
+#     plt.axis('off')
+#     plt.gca().xaxis.set_major_locator(NullLocator())
+#     plt.gca().yaxis.set_major_locator(NullLocator())
+#     plt.savefig('output/%d.png' % (img_i),dpi=300, bbox_inches='tight', pad_inches=0.0)
+#     plt.close()
+print('processing time: %s s, which means %f FPS' %(inference_time, len(imgs)/int(inference_time)))

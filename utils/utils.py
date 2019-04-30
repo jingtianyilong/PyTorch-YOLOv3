@@ -369,6 +369,7 @@ def get_frustum_point_distance(img_id, img_path, detection, kitti_path, img_size
     # theta_c = np.pi/2
     D_rough = Height_of_camera * fv / (v_bottom - img_height_orig/2)
     # D_rough = Height_of_camera * (np.tan(theta_c + np.arctan((img_height_orig/2 - d_p)/fv)) - np.tan(theta_c - np.arctan(img_height_orig/(2*fv))))
+    print(D_rough)
     if D_rough > 0:
         # remove points that are located behind the camera:
         point_cloud = point_cloud[point_cloud[:, 0] > (D_rough - 2), :]
@@ -464,7 +465,9 @@ def get_frustum_point_distance(img_id, img_path, detection, kitti_path, img_size
         right_side_distance = ransac.predict([[frustum_point_cloud_xyz_camera[:,1].max()]])[0][0]
         left_side_distance = ransac.predict([[frustum_point_cloud_xyz_camera[:,1].min()]])[0][0]
 
-        detection[7] = min(left_side_distance,right_side_distance)
+        detection[7] = min(min(left_side_distance,right_side_distance),D_rough-2)
+        print('image id:', img_id)
+        print('Rough estimation %d, \n ransac estimation: %d %d, \n final estimation: %d' %(rough_D,left_side_distance,right_side_distance,detection[7]))
         return torch.tensor(detection)
 
     else:# might be a problem
