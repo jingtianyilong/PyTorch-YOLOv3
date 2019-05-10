@@ -29,7 +29,7 @@ parser.add_argument('--conf_thres', type=float, default=0.8, help='object confid
 parser.add_argument('--nms_thres', type=float, default=0.4, help='iou thresshold for non-maximum suppression')
 parser.add_argument('--batch_size', type=int, default=1, help='size of the batches')
 parser.add_argument('--n_cpu', type=int, default=8, help='number of cpu threads to use during batch generation')
-parser.add_argument('--img_size', type=int, default=416, help='size of each image dimension')
+parser.add_argument('--img_size', type=list, default=[416,416], help='size of each image dimension')
 parser.add_argument('--use_cuda', type=bool, default=True, help='whether to use cuda if available')
 opt = parser.parse_args()
 print(opt)
@@ -104,11 +104,11 @@ for img_i, (path, detections) in enumerate(zip(imgs, img_detections)):
     ax.imshow(img)
 
     # The amount of padding that was added
-    pad_x = max(img.shape[0] - img.shape[1], 0) * (opt.img_size / max(img.shape))
-    pad_y = max(img.shape[1] - img.shape[0], 0) * (opt.img_size / max(img.shape))
+    pad_x = max(img.shape[0] - img.shape[1], 0) * (max(opt.img_size) / max(img.shape))
+    pad_y = max(img.shape[1] - img.shape[0], 0) * (max(opt.img_size) / max(img.shape))
     # Image height and width after padding is removed
-    unpad_h = opt.img_size - pad_y
-    unpad_w = opt.img_size - pad_x
+    unpad_h = opt.img_size[1] - pad_y
+    unpad_w = opt.img_size[0] - pad_x
 
     # Draw bounding boxes and labels of detections
     if detections is not None:

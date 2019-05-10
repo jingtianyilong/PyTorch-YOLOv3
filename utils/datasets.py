@@ -17,9 +17,9 @@ from skimage.transform import resize
 import sys
 
 class ImageFolder(Dataset):
-    def __init__(self, folder_path, img_size=416):
+    def __init__(self, folder_path, img_size=[416,416]):
         self.files = sorted(glob.glob('%s/*.*' % folder_path))
-        self.img_shape = (img_size, img_size)
+        self.img_shape = (img_size[0], img_size[1])
 
     def __getitem__(self, index):
         img_path = self.files[index % len(self.files)]
@@ -47,11 +47,11 @@ class ImageFolder(Dataset):
 
 
 class ListDataset(Dataset):
-    def __init__(self, list_path, img_size=416):
+    def __init__(self, list_path, img_size=[416,416]):
         with open(list_path, 'r') as file:
             self.img_files = file.readlines()
         self.label_files = [path.replace('images', 'labels').replace('.png', '.txt').replace('.jpg', '.txt') for path in self.img_files]
-        self.img_shape = (img_size, img_size)
+        self.img_shape = (img_size[0],img_size[1])
         self.max_objects = 50
 
     def __getitem__(self, index):

@@ -22,7 +22,7 @@ parser.add_argument('--conf_thres', type=float, default=0.5, help='object confid
 parser.add_argument('--nms_thres', type=float, default=0.4, help='iou thresshold for non-maximum suppression')
 parser.add_argument('--batch_size', type=int, default=1, help='size of the batches')
 parser.add_argument('--n_cpu', type=int, default=8, help='number of cpu threads to use during batch generation')
-parser.add_argument('--img_size', type=int, default=416, help='size of each image dimension')
+parser.add_argument('--img_size', type=list, default=[416,416], help='size of each image dimension')
 parser.add_argument('--use_cuda', type=bool, default=True, help='whether to use cuda if available')
 opt = parser.parse_args()
 print(opt)
@@ -95,7 +95,7 @@ while cap.isOpened():
 
         detections = torch.cat(detections)
         img_dim = img_dim.repeat(detections.size(0), 1)
-        scaling_factor = torch.min(opt.img_size/img_dim,1)[0].view(-1,1)
+        scaling_factor = torch.min(opt.img_size[0]/img_dim,1)[0].view(-1,1)
         # view() transform the tensor in different size. in this case -1 means don't care. But column must be 1
         
         detections[:,[0,2]] -= (input_dim - scaling_factor*img_dim[:,0].view(-1,1))/2

@@ -53,11 +53,11 @@ while cap.isOpened():
 
         detections = torch.cat(detections)
         img_dim = img_dim.repeat(detections.size(0), 1)
-        scaling_factor = torch.min(opt.img_size/img_dim,1)[0].view(-1,1)
+        scaling_factor = torch.min(opt.img_size[0]/img_dim,1)[0].view(-1,1)
         # view() transform the tensor in different size. in this case -1 means don't care. But column must be 1
 
-        detections[:,[0,2]] -= (input_dim - scaling_factor*img_dim[:,0].view(-1,1))/2
-        detections[:,[1,3]] -= (input_dim - scaling_factor*img_dim[:,1].view(-1,1))/2
+        detections[:,[0,2]] -= (input_dim[0] - scaling_factor*img_dim[:,0].view(-1,1))/2
+        detections[:,[1,3]] -= (input_dim[1] - scaling_factor*img_dim[:,1].view(-1,1))/2
         detections[:,0:4] /= scaling_factor
 
         for i in range(detections.shape[0]):

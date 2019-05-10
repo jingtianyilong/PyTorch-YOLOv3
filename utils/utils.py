@@ -320,11 +320,11 @@ def get_frustum_point_distance(img_id, img_path, detection, kitti_path, img_size
 
     img_height_orig = img.shape[0]
 
-    pad_x = max(img_height_orig - img_width_orig, 0) * (img_size_after_resize / max(img_width_orig, img_height_orig))
-    pad_y = max(img_width_orig - img_height_orig, 0) * (img_size_after_resize / max(img_width_orig, img_height_orig))
+    pad_x = max(img_height_orig - img_width_orig, 0) * (max(img_size_after_resize) / max(img_width_orig, img_height_orig))
+    pad_y = max(img_width_orig - img_height_orig, 0) * (max(img_size_after_resize) / max(img_width_orig, img_height_orig))
     # Image height and width after padding is removed
-    unpad_h = img_size_after_resize - pad_y
-    unpad_w = img_size_after_resize - pad_x
+    unpad_h = img_size_after_resize[1] - pad_y
+    unpad_w = img_size_after_resize[0] - pad_x
     box_h = ((detection[3] - detection[1]) / unpad_h) * img_height_orig
     box_w = ((detection[2] - detection[0]) / unpad_w) * img_width_orig
     v_upper = ((detection[1] - pad_y // 2) / unpad_h) * img_height_orig

@@ -34,7 +34,7 @@ parser.add_argument("--iou_thres", type=float, default=0.5, help="iou threshold 
 parser.add_argument("--conf_thres", type=float, default=0.2, help="object confidence threshold")
 parser.add_argument("--nms_thres", type=float, default=0.45, help="iou thresshold for non-maximum suppression")
 parser.add_argument("--n_cpu", type=int, default=8, help="number of cpu threads to use during batch generation")
-parser.add_argument("--img_size", type=int, default=416, help="size of each image dimension")
+parser.add_argument("--img_size", type=list, default=[416,416], help="size of each image dimension")
 parser.add_argument("--use_cuda", type=bool, default=True, help="whether to use cuda if available")
 opt = parser.parse_args()
 print(opt)
@@ -103,7 +103,11 @@ for batch_i, (_, imgs, targets) in enumerate(tqdm.tqdm(dataloader, desc="Detecti
             annotation_boxes[:, 1] = _annotation_boxes[:, 1] - _annotation_boxes[:, 3] / 2
             annotation_boxes[:, 2] = _annotation_boxes[:, 0] + _annotation_boxes[:, 2] / 2
             annotation_boxes[:, 3] = _annotation_boxes[:, 1] + _annotation_boxes[:, 3] / 2
-            annotation_boxes *= opt.img_size
+
+            annotation_boxes[:, 0] *= opt.img_size[0]
+            annotation_boxes[:, 1] *= opt.img_size[1]
+            annotation_boxes[:, 2] *= opt.img_size[0]
+            annotation_boxes[:, 3] *= opt.img_size[1]
 
             for label in range(num_classes):
                 all_annotations[-1][label] = annotation_boxes[annotation_labels == label, :]
