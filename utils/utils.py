@@ -542,11 +542,6 @@ def get_frustum_point_distance_simplified(img_id, img_path, detection, kitti_pat
         point_cloud = point_cloud[point_cloud[:,2] > Height_of_camera,:]
 
 
-        Tr_velo_to_cam_orig = calib["Tr_velo_to_cam"]
-        R0_rect_orig = calib["R0_rect"] # 3x3
-
-        R0_rect = np.eye(4)
-        R0_rect[0:3, 0:3] = R0_rect_orig # 3x3 -> 4x4 up left corner
         ########################################################################
         # R0_rect: example
         # array([[ 0.99, 0.01, 0.01,   0 ],
@@ -554,17 +549,19 @@ def get_frustum_point_distance_simplified(img_id, img_path, detection, kitti_pat
         #        [ 0.01, 0.01, 0.99,   0 ],
         #        [    0,    0,    0,   1 ]])
         ########################################################################
-
-        Tr_velo_to_cam = np.eye(4)
-        Tr_velo_to_cam[0:3, :] = Tr_velo_to_cam_orig # 3x4 -> 4x4 up left corner
-        ########################################################################
         # Tr_velo_to_cam:
         # Tr_velo_to_cam = [ R_velo_to_cam,    t_velo_to_cam ]
         #                  [             0,                1 ]
         # Rotation matrix velo -> camera 3x3, translation vector velo ->camera 1x3
         ########################################################################
+        R0_rect = np.eye(4)
+        R0_rect[0:3, 0:3] = calib["R0_rect"] # 3x3 -> 4x4 up left corner
+        Tr_velo_to_cam = np.eye(4)
+        Tr_velo_to_cam[0:3, :] = calib["Tr_velo_to_cam"] # 3x4 -> 4x4 up left corner
 
-        point_cloud_xyz = point_cloud[:, 0:3] # num_point x 3 (x,y,z,reflectance) reflectance don't need
+
+
+        # point_cloud_xyz = point_cloud[:, 0:3] # num_point x 3 (x,y,z,reflectance) reflectance don't need
         point_cloud_xyz_hom = np.ones((point_cloud.shape[0], 4))
         point_cloud_xyz_hom[:, 0:3] = point_cloud[:, 0:3] # (point_cloud_xyz_hom has shape (num_points, 4))
         # the 4th column are all 1
@@ -606,12 +603,10 @@ def get_frustum_point_distance_simplified(img_id, img_path, detection, kitti_pat
                                        img_points[:, 1] <= v_bottom))
 
         # filter out point are not in frustum area
-        frustum_point_cloud_xyz = point_cloud_xyz[row_mask, :] # (needed only for visualization)
         frustum_point_cloud = point_cloud[row_mask, :]
         frustum_point_cloud_xyz_camera = point_cloud_xyz_camera[row_mask, :]
-        frustum_point_cloud_camera = point_cloud_camera[row_mask, :]
 
-        # randomly sample 512 points in the frustum point cloud:
+
 
 
         if frustum_point_cloud.shape[0] == 0:

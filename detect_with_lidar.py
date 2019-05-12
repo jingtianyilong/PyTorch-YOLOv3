@@ -28,7 +28,7 @@ import time
 parser = argparse.ArgumentParser()
 parser.add_argument('--image_folder', type=str, default='examples/', help='path to dataset')
 parser.add_argument('--config_path', type=str, default='config/v390.cfg', help='path to model config file')
-parser.add_argument('--weights_path', type=str, default='weights/v390_final.weights', help='path to weights file')
+parser.add_argument('--weights_path', type  =str, default='weights/v390_final.weights', help='path to weights file')
 parser.add_argument('--kitti_path', type=str, default='/home/project/ZijieMA/KITTI/', help='path to kitti path')
 parser.add_argument('--class_path', type=str, default='data/coco.names', help='path to class label file')
 parser.add_argument('--conf_thres', type=float, default=0.8, help='object confidence threshold')
