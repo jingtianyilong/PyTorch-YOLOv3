@@ -480,110 +480,22 @@ def get_frustum_point_distance_simplified(img_id, img_path, detection, kitti_pat
     lidar_path = '%straining/velodyne/%06d.bin' % (kitti_path, img_id)
     calib = calibread('%straining/calib/%06d.txt' % (kitti_path, img_id))
     img = cv2.imread('/home/project/ZijieMA/PyTorch-YOLOv3/examples/%06d.png' % img_id, cv2.IMREAD_UNCHANGED)
-    # img = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
-    img_width_orig = img.shape[1]
-    img_height_orig = img.shape[0]
+    point_cloud = np.fromfile(lidar_path, dtype=np.float32).reshape(-1, 4)
 
-    pad_x = max(img_height_orig - img_width_orig, 0) * (img_size_after_resize / max(img_width_orig, img_height_orig))
-    pad_y = max(img_width_orig - img_height_orig, 0) * (img_size_after_resize / max(img_width_orig, img_height_orig))
-
-    # Image height and width after padding is removed
-    unpad_h = img_size_after_resize - pad_y
-    unpad_w = img_size_after_resize - pad_x
     box_h = ((detection[3] - detection[1]) / unpad_h) * img_height_orig
     box_w = ((detection[2] - detection[0]) / unpad_w) * img_width_orig
     v_upper = ((detection[1] - pad_y // 2) / unpad_h) * img_height_orig
     u_left = ((detection[0] - pad_x // 2) / unpad_w) * img_width_orig
     v_bottom = v_upper + box_h
     u_right = u_left + box_w
-
-    point_cloud = np.fromfile(lidar_path, dtype=np.float32).reshape(-1, 4)
-
-    # detections with shape: (x1, y1, x2, y2, object_conf, class_score, class_pred)
-
-    ########################################################################
-    # Distance rough estimation
-    # D = H [tan(theta_c+arctan((h_i/2-d_p)/(h/(2*tan(alpha/2)))))-tan(theta_c-alpha/2)]
-    # reference：
-    # Computer_Vision_for_Road_Safety_A_System
-    # H         height of the camera(according to kitti is 1.65m)
-    # alpha     angle of FOV in v-axis fv=h_i/(2*tan(alpha/2))
-    # theta_c   angle between camera x-axis and X-axis(pi/2)
-    # h_i       height of the recorded image plane(pixel)(512)
-    # d_p       distance from the bottom of image to the bottom of the bounding box(512-v_min)
-    #
-    # D = H ×[tan（theta_c+arctan((h_i-d_p)/fv))-tan(theta_c-arctan(hi/(2fv)))]
-    #
-    ########################################################################
-
-
-    # # # # # debug visualization:
-    # pcd = PointCloud()
-    # pcd.points = Vector3dVector(point_cloud[:, 0:3])
-    # pcd.paint_uniform_color([0.65, 0.65, 0.65])
-    # draw_geometries_dark_background([pcd])
-    # 362 252 207 214
-    # # # # #
-
-    P2 = calib["P2"] # 3x4 matris projection matrix after rectification
-    # （u,v,1） = dot(P2, (x,y,z,1))
-    Height_of_camera = 1.65
-    fu = P2[0][0]  # for horizontal position
-    fv = P2[1][1]
-    # theta_c = np.pi/2
-    D_rough = Height_of_camera * fv / (v_bottom - img_height_orig/2)
-    # D_rough = Height_of_camera * (np.tan(theta_c + np.arctan((img_height_orig/2 - d_p)/fv)) - np.tan(theta_c - np.arctan(img_height_orig/(2*fv))))
-    print(D_rough)
+    D_rough = Height_of_camera * fv / (v_bottom - img_height_orig / 2)
     if D_rough > 0:
         # remove points that are located behind the camera:
-        point_cloud = point_cloud[point_cloud[:, 0] > (D_rough - 2), :]
+        point_cloud = point_cloud[point_cloud[:, 0] > (D_rough - 3), :]
         # remove points that are located too far away from the camera:
-        point_cloud = point_cloud[point_cloud[:, 0] < min(80, D_rough + 2), :]
-        point_cloud = point_cloud[point_cloud[:,2] > Height_of_camera,:]
-
-
-        ########################################################################
-        # R0_rect: example
-        # array([[ 0.99, 0.01, 0.01,   0 ],
-        #        [ 0.01, 0.99, 0.01,   0 ],
-        #        [ 0.01, 0.01, 0.99,   0 ],
-        #        [    0,    0,    0,   1 ]])
-        ########################################################################
-        # Tr_velo_to_cam:
-        # Tr_velo_to_cam = [ R_velo_to_cam,    t_velo_to_cam ]
-        #                  [             0,                1 ]
-        # Rotation matrix velo -> camera 3x3, translation vector velo ->camera 1x3
-        ########################################################################
-        R0_rect = np.eye(4)
-        R0_rect[0:3, 0:3] = calib["R0_rect"] # 3x3 -> 4x4 up left corner
-        Tr_velo_to_cam = np.eye(4)
-        Tr_velo_to_cam[0:3, :] = calib["Tr_velo_to_cam"] # 3x4 -> 4x4 up left corner
-
-
-
-        # point_cloud_xyz = point_cloud[:, 0:3] # num_point x 3 (x,y,z,reflectance) reflectance don't need
-        point_cloud_xyz_hom = np.ones((point_cloud.shape[0], 4))
-        point_cloud_xyz_hom[:, 0:3] = point_cloud[:, 0:3] # (point_cloud_xyz_hom has shape (num_points, 4))
-        # the 4th column are all 1
-
-        # project the points onto the image plane (homogeneous coords):
-        img_points_hom = np.dot(P2, np.dot(R0_rect, np.dot(Tr_velo_to_cam, point_cloud_xyz_hom.T))).T # (point_cloud_xyz_hom.T has shape (4, num_points))
-        # (U,V,_) = P2 * R0_rect * Tr_velo_to_cam * point_cloud_xyz_hom
-        # normalize: (U,V,1)
-        img_points = np.zeros((img_points_hom.shape[0], 2))
-        img_points[:, 0] = img_points_hom[:, 0]/img_points_hom[:, 2]
-        img_points[:, 1] = img_points_hom[:, 1]/img_points_hom[:, 2]
-
-        # transform the points into (rectified) camera coordinates:
-        point_cloud_xyz_camera_hom = np.dot(R0_rect, np.dot(Tr_velo_to_cam, point_cloud_xyz_hom.T)).T # (point_cloud_xyz_hom.T has shape (4, num_points))
-        # normalize: (x,y,z,1)
-        point_cloud_xyz_camera = np.zeros((point_cloud_xyz_camera_hom.shape[0], 3))
-        point_cloud_xyz_camera[:, 0] = point_cloud_xyz_camera_hom[:, 0]/point_cloud_xyz_camera_hom[:, 3]
-        point_cloud_xyz_camera[:, 1] = point_cloud_xyz_camera_hom[:, 1]/point_cloud_xyz_camera_hom[:, 3]
-        point_cloud_xyz_camera[:, 2] = point_cloud_xyz_camera_hom[:, 2]/point_cloud_xyz_camera_hom[:, 3]
-
-        point_cloud_camera = point_cloud
-        point_cloud_camera[:, 0:3] = point_cloud_xyz_camera # reserve reflection
+        point_cloud = point_cloud[point_cloud[:, 0] < min(80, D_rough + 3), :]
+        point_cloud = point_cloud[point_cloud[:, 2] > -1.5, :]
+        point_cloud = point_cloud[point_cloud[:, 2] < -1, :]
 
         ########################################################################
         # point_cloud               n x 4   original xyzr value before cali in velo coordinate
@@ -595,17 +507,30 @@ def get_frustum_point_distance_simplified(img_id, img_path, detection, kitti_pat
         # img_points                n x 2   UV
         ########################################################################
 
+        R0_rect = np.eye(4)
+        R0_rect[0:3, 0:3] = calib["R0_rect"]  # 3x3 -> 4x4 up left corner
+        Tr_velo_to_cam = np.eye(4)
+        Tr_velo_to_cam[0:3, :] = calib["Tr_velo_to_cam"]  # 3x4 -> 4x4 up left corner
+
+        # point_cloud_xyz = point_cloud[:, 0:3] # num_point x 3 (x,y,z,reflectance) reflectance don't need
+        point_cloud_xyz_hom = np.ones((point_cloud.shape[0], 4))
+        point_cloud_xyz_hom[:, 0:3] = point_cloud[:, 0:3]  # (point_cloud_xyz_hom has shape (num_points, 4))
+        # the 4th column are all 1
+
+        # project the points onto the image plane (homogeneous coords):
+        # (U,V,_) = P2 * R0_rect * Tr_velo_to_cam * point_cloud_xyz_hom
+        # normalize: (U,V,1)
+        img_points_hom = np.dot(P2, np.dot(R0_rect, np.dot(Tr_velo_to_cam,
+                                                           point_cloud_xyz_hom.T))).T  # (point_cloud_xyz_hom.T has shape (4, num_points))
+        img_points = np.zeros((img_points_hom.shape[0], 2))
+        img_points[:, 0] = img_points_hom[:, 0] / img_points_hom[:, 2]
+        img_points[:, 1] = img_points_hom[:, 1] / img_points_hom[:, 2]
 
         row_mask = np.logical_and(
-                        np.logical_and(img_points[:, 0] >= u_left,
-                                       img_points[:, 0] <= u_right),
-                        np.logical_and(img_points[:, 1] >= v_upper,
-                                       img_points[:, 1] <= v_bottom))
-
-        # filter out point are not in frustum area
-        frustum_point_cloud = point_cloud[row_mask, :]
-        frustum_point_cloud_xyz_camera = point_cloud_xyz_camera[row_mask, :]
-
+            np.logical_and(img_points[:, 0] >= u_left,
+                           img_points[:, 0] <= u_right),
+            np.logical_and(img_points[:, 1] >= v_upper,
+                           img_points[:, 1] <= v_bottom))
 
 
 
@@ -632,3 +557,38 @@ def get_frustum_point_distance_simplified(img_id, img_path, detection, kitti_pat
     else:# might be a problem
         detection[7] = float('nan')
         return torch.tensor(detection)
+
+
+def findIntersection(x1, y1, x2, y2, x3, y3, x4, y4):
+    '''generate intersection point using 4 different point'''
+    px = ((x1 * y2 - y1 * x2) * (x3 - x4) - (x1 - x2) * (x3 * y4 - y3 * x4)) / (
+                (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4))
+    py = ((x1 * y2 - y1 * x2) * (y3 - y4) - (y1 - y2) * (x3 * y4 - y3 * x4)) / (
+                (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4))
+    return [px, py]
+
+def ransac_with_bbox(point_cloud_with_mask,n_sample,category):
+    '''
+
+    :param point_cloud_with_mask: point cloud in frustum area
+    :param n_sample: sample to start ransac(should be less than len(point_cloud_with_mask))
+    :param category: decide how we deal with the regresion
+    '''
+    # category numbers are according to the datasets. Here with COCO
+    # car, bus and truck
+    if category = 2 or 5 or 7:
+        '''
+        idea with the car is to use ransac to filter out outliers and regression with one line that describes a 
+        edge. The outliers then run another ransac to generate another edge
+        '''
+    # person
+    elif category = 0:
+        '''the idea of the human can use the center cluster to be the distance'''
+    # motorcycle and bycicle
+    else:
+
+
+
+
+
+    return x1,y1,x2,y2,x3,y3
