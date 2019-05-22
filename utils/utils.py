@@ -565,9 +565,24 @@ def findIntersection(x1, y1, x2, y2, x3, y3, x4, y4):
                 (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4))
     py = ((x1 * y2 - y1 * x2) * (y3 - y4) - (y1 - y2) * (x3 * y4 - y3 * x4)) / (
                 (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4))
-    return [px, py]
+    return px, py
 
-def ransac_with_bbox(point_cloud_with_mask,n_sample,category):
+def findEdgePoint(x1, y1, x2, y2, x3, y3, x4, y4):
+    '''
+    checking point that are on the far side
+    '''
+    df = [[x1,y1,0],[x2,y2,0],[x3,y3,0],[x4,y4,0]]
+    for point in df:
+        point[2]=point[0]**2+point[1]**2
+    df = sorted(df,key=df[:,2])
+    # point start always from left side
+    if df[0][1] <= df[1][1]:
+        return df[0][0], df[0][1], df[1][0], df[1][1]
+    else:
+        return df[1][0], df[1][1], df[0][0], df[1][1]
+
+
+def ransac_with_bbox(point_cloud_with_mask, category,rough_D):
     '''
 
     :param point_cloud_with_mask: point cloud in frustum area
@@ -576,19 +591,43 @@ def ransac_with_bbox(point_cloud_with_mask,n_sample,category):
     '''
     # category numbers are according to the datasets. Here with COCO
     # car, bus and truck
-    if category = 2 or 5 or 7:
+    if category in [2, 5, 7]:
         '''
-        idea with the car is to use ransac to filter out outliers and regression with one line that describes a 
+        idea with the car is to use ransac to filter out outliers and regression with one line that describes a
         edge. The outliers then run another ransac to generate another edge
         '''
+        ransac = linear_model.RANSACRegressor(max_trials=1000, stop_probability=0.999)
+        ransac.fit(point_cloud_with[:, 1].reshape(-1, 1), point_cloud_with[:, 0].reshape(-1, 1))
+
+        # line points for first ransac
+        inlier_index = list(compress(range(len(ransac.inlier_mask_)), ransac.inlier_mask_))
+        left_y_1 = point_cloud_with_mask[inlier_index, 1].min()
+        right_y_1 =  point_cloud_with_mask[inlier_index, 1].max()
+        left_x_1 = ransac.predict([[left_y_1, ]])[0][0]
+        right_x_1 = ransac.predict([[right_y_1, ]])[0][0]
+
+        outlier_index = list(compress(range(len(ransac.inlier_mask_)), [not i for i in ransac.inlier_mask_]))
+        outlier_point_cloud = point_cloud_with_mask[outlier_index,:]
+        if len(outlier_index)>1/5*(len(point_cloud_with_mask)):
+
+            ransac.fit(outlier_point_cloud[:, 1].reshape(-1, 1),
+                       outlier_point_cloud[:, 0].reshape(-1, 1))
+
+            inlier_index = list(compress(range(len(ransac.inlier_mask_)), ransac.inlier_mask_))
+            left_y_2 = outlier_point_cloud[inlier_index, 1].min()
+            right_y_2 =  outlier_point_cloud[inlier_index, 1].max()
+            left_x_2 = ransac.predict([[left_y_2, ]])[0][0]
+            right_x_2 = ransac.predict([[right_y_2, ]])[0][0]
+
+            x_2, y2 = findIntersection(left_x_1,left_y_1,right_x_1,right_y_1,left_x_2,left_y_2,right_x_1,right_y_2)
+            x_1, y_1, x3, y3 = findEdgePoint(left_x_1,left_y_1,right_x_1,right_y_1,left_x_2,left_y_2,right_x_2,right_y_2)
+            # return coordination of 3 contour point, from left to right.
+            return [x_1, y_1, x_2, y_2, x_3, y_3]
+        else: return [left_x_1, left_y_1, right_x_1, right_y_1]
+
     # person
-    elif category = 0:
+    elif category == 0:
         '''the idea of the human can use the center cluster to be the distance'''
-    # motorcycle and bycicle
+        return None
     else:
-
-
-
-
-
-    return x1,y1,x2,y2,x3,y3
+        return None
