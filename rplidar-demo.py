@@ -1,5 +1,9 @@
+
+import pyrealsense2 as rs
+import numpy as np
 import cv2
 import argparse
+import sys
 import time
 import torch
 
@@ -13,19 +17,19 @@ import numpy as np
 import random
 import rospy
 from sensor_msgs.msg import LaserScan
-from utils.laserSub import LaserScan
+# from utils.laserSub import LaserSubs
 
-print('start program')
+
 parser = argparse.ArgumentParser()
-parser.add_argument('--config_path', type=str, default='config/v390.cfg', help='path to model config file')
-# parser.add_argument('--weights_path', type=str, default='/home/zijieguo/project/darknet/yolov3.weights', help='path to weights file')
-parser.add_argument('--weights_path', type=str, default='weights/v390_500000.weights', help='path to weights file')
+parser.add_argument('--config_path', type=str, default='config/yolov3.cfg', help='path to model config file')
+parser.add_argument('--weights_path', type=str, default='/home/zijieguo/darknet/yolov3.weights', help='path to weights file')
+# parser.add_argument('--weights_path', type=str, default='weights/v390_500000.weights', help='path to weights file')
 parser.add_argument('--class_path', type=str, default='data/coco.names', help='path to class label file')
 parser.add_argument('--conf_thres', type=float, default=0.5, help='object confidence threshold')
 parser.add_argument('--nms_thres', type=float, default=0.4, help='iou thresshold for non-maximum suppression')
 parser.add_argument('--batch_size', type=int, default=1, help='size of the batches')
 parser.add_argument('--n_cpu', type=int, default=8, help='number of cpu threads to use during batch generation')
-parser.add_argument('--img_size', type=list, default=[416,416], help='size of each image dimension')
+parser.add_argument('--img_size', type=list, default=416, help='size of each image dimension')
 parser.add_argument('--use_cuda', type=bool, default=True, help='whether to use cuda if available')
 opt = parser.parse_args()
 print(opt)
@@ -44,6 +48,15 @@ def write(x, results):
     cv2.putText(img, label, (c1[0], c1[1] + t_size[1] + 4), cv2.FONT_HERSHEY_DUPLEX, 1, [225,255,255], 1);
     return img
 
+
+# Configure depth and color streams
+pipeline = rs.pipeline()
+config = rs.config()
+config.enable_stream(rs.stream.color, 1920, 1080, rs.format.bgr8, 30)
+
+# Start streaming
+pipeline.start(config)
+
 CUDA = torch.cuda.is_available() and opt.use_cuda
 # os.makedirs('output', exist_ok=True)
 
@@ -53,26 +66,52 @@ model = Darknet(opt.config_path, img_size=opt.img_size)
 model.load_weights(opt.weights_path)
 input_dim = opt.img_size
 
+point_cloud_raw = np.empty((0,2))
+
+def callback(msg):
+    # print(msg.ranges)
+
+    global point_cloud_raw
+    print('enter callback')
+    point_cloud_raw = np.empty((0,2))
+    num_points = len(msg.ranges)
+    angle_increment = msg.angle_increment
+    i=0
+     # only points in the front
+
+    for point in msg.ranges[-90:]+msg.ranges[:90]:
+        if point!=float('Inf'):
+            # print("point!=inf")
+            point_cloud_raw = np.append(point_cloud_raw,[[point*np.cos(i),point*np.sin(i)]],axis=0)
+        else:
+            # print("point=inf")
+            pass
+        i+=angle_increment
+
+rospy.init_node('lidarListen')
+sub = rospy.Subscriber('/scan', LaserScan, callback)
+# rospy.spin()
+
+print("finish load LaserSubs")
 if CUDA:
     model.cuda()
 
 model.eval() # Set in evaluation mode
 
-video_file = '/home/zijieguo/project/darknet/IMG_8765.mov'
-cap = cv2.VideoCapture(video_file)
-# cap = cv2.VideoCapture(0)
-
-
-assert cap.isOpened(), 'failed to load camera video'
-
 frames = 0
 start_time = time.time()
-while cap.isOpened():
-    ret, frame = cap.read()
-    if ret:
-        img = prep_image(frame, input_dim) # img: torch.Tensor size([1, 3, 416, 416])
-#        cv2.imshow("a", frame)
-        img_dim = frame.shape[1], frame.shape[0] #(720 480)
+try:
+    while True:
+        # Wait for a coherent pair of frames: depth and color
+        camframes = pipeline.wait_for_frames()
+        color_frame = camframes.get_color_frame()
+        if not color_frame:
+            continue
+        # Convert images to numpy arrays
+        color_image = np.asanyarray(color_frame.get_data())
+
+        img = prep_image(color_image, input_dim) # img: torch.Tensor size([1, 3, 416, 416])
+        img_dim = color_image.shape[1], color_image.shape[0] #(720 480)
         img_dim = torch.FloatTensor(img_dim).repeat(1,2) # (1 4) [720 480 720 480]
         # 重复im_dim 1行2列
 
@@ -82,17 +121,17 @@ while cap.isOpened():
 
         with torch.no_grad():
             detections = model(img)
-            # detections = write_results(detections,opt.conf_thres, 80, nms_conf = opt.nms_thres)
-            detections = non_max_suppression(detections, 80, opt.conf_thres, opt.num_thres)
+            detections = non_max_suppression(detections, 80, opt.conf_thres, opt.nms_thres)
             # write_results function performs NMS
-            detections_with_distance = torch.zeros((detections[0].shape[0]), detections[0].shape[1]+1)
-            detections_with_distance[:,:,-1] = detections[0]
+            detections_with_distance = torch.zeros((detections[0].shape[0]), detections[0].shape[1]+2)
+            detections_with_distance[:,:-2] = detections[0]
 
-            for detection in detections_with_distance:
-                detection = get_frustum_rplidar_distance()
+            # for detection in detections_with_distance:
+            #     detection = get_frustum_rplidar_distance()
+        # print(len(pc.point_cloud_raw))
 
 
-
+        # print(pc.point_cloud_raw)
         if type(detections) == int:
             frames += 1
             print("FPS of the video is {:5.4f}".format(frames / (time.time() - start_time)))
@@ -104,11 +143,11 @@ while cap.isOpened():
 
         detections = torch.cat(detections)
         img_dim = img_dim.repeat(detections.size(0), 1)
-        scaling_factor = torch.min(opt.img_size[0]/img_dim,1)[0].view(-1,1)
+        scaling_factor = torch.min(opt.img_size/img_dim,1)[0].view(-1,1)
         # view() transform the tensor in different size. in this case -1 means don't care. But column must be 1
 
-        detections[:,[0,2]] -= (input_dim[0] - scaling_factor*img_dim[:,0].view(-1,1))/2
-        detections[:,[1,3]] -= (input_dim[1] - scaling_factor*img_dim[:,1].view(-1,1))/2
+        detections[:,[0,2]] -= (input_dim - scaling_factor*img_dim[:,0].view(-1,1))/2
+        detections[:,[1,3]] -= (input_dim - scaling_factor*img_dim[:,1].view(-1,1))/2
 
         detections[:,0:4] /= scaling_factor
 
@@ -118,21 +157,20 @@ while cap.isOpened():
             # Clamp all elements in input into the range [ min, max ] and return a resulting tensor
 
 
-        FPS = frames/(time.time()-start_time)
+
         classes = load_classes('data/coco.names')
         colors = pkl.load(open("pallete", "rb"))
 
-        list(map(lambda x: write(x, frame), detections))
-
-        cv2.imshow("frame", frame)
+        list(map(lambda x: write(x, color_image), detections))
+        cv2.imshow("frame", color_image)
         key = cv2.waitKey(1)
         if key & 0xFF == ord('q'):
             break
-        frames += 1
-
-    else:
-        print("FPS of the video is {:5.2f}".format(FPS))
-        break
 
 
-
+finally:
+    FPS = frames/(time.time()-start_time)
+    frames += 1
+    print('FPS:%.04f' % FPS, end='\r')
+    # Stop streaming
+    pipeline.stop()

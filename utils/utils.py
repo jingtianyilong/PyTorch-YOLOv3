@@ -5,7 +5,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
-# import rospy
 import numpy as np
 import cv2
 from sklearn import linear_model, datasets
@@ -13,7 +12,8 @@ from sklearn import linear_model, datasets
 # import matplotlib.pyplot as plt
 # import matplotlib.patches as patches
 from utils.kittiloader import *
-
+import rospy
+from sensor_msgs.msg import LaserScan
 
 def load_classes(path):
     """
@@ -650,3 +650,84 @@ def ransac_with_bbox(point_cloud_with_mask, category, rough_D):
         return None
     else:
         return None
+
+def get_frustum_rplidar_distance(detection, img_size_after_resize):
+    detection = detection.numpy()
+
+    point_cloud = np.fromfile(lidar_path, dtype=np.float32).reshape(-1, 4)
+
+    box_h = ((detection[3] - detection[1]) / unpad_h) * img_height_orig
+    box_w = ((detection[2] - detection[0]) / unpad_w) * img_width_orig
+    v_upper = ((detection[1] - pad_y // 2) / unpad_h) * img_height_orig
+    u_left = ((detection[0] - pad_x // 2) / unpad_w) * img_width_orig
+    v_bottom = v_upper + box_h
+    u_right = u_left + box_w
+    D_rough = Height_of_camera * fv / (v_bottom - img_height_orig / 2)
+    if D_rough > 0:
+        # remove points that are located behind the camera:
+        point_cloud = point_cloud[point_cloud[:, 0] > (D_rough - 3), :]
+        # remove points that are located too far away from the camera:
+        point_cloud = point_cloud[point_cloud[:, 0] < min(80, D_rough + 3), :]
+        point_cloud = point_cloud[point_cloud[:, 2] > -1.5, :]
+        point_cloud = point_cloud[point_cloud[:, 2] < -1, :]
+
+        ########################################################################
+        # point_cloud               n x 4   original xyzr value before cali in velo coordinate
+        # point_cloud_xyz           n x 3   xyz value before cali in velo coordinate
+        # point_cloud_xyz_hom       n x 4   xyz1 in velo coordinate
+        # point_cloud_xyz_camera    n x 4   xyz1 in camera coordinate
+        # point_cloud_camera        n x 4   xyzr in camera coordinate
+        # img_points_hom            n x 3   uv_
+        # img_points                n x 2   UV
+        ########################################################################
+
+        R0_rect = np.eye(4)
+        R0_rect[0:3, 0:3] = calib["R0_rect"]  # 3x3 -> 4x4 up left corner
+        Tr_velo_to_cam = np.eye(4)
+        Tr_velo_to_cam[0:3, :] = calib["Tr_velo_to_cam"]  # 3x4 -> 4x4 up left corner
+
+        # point_cloud_xyz = point_cloud[:, 0:3] # num_point x 3 (x,y,z,reflectance) reflectance don't need
+        point_cloud_xyz_hom = np.ones((point_cloud.shape[0], 4))
+        point_cloud_xyz_hom[:, 0:3] = point_cloud[:, 0:3]  # (point_cloud_xyz_hom has shape (num_points, 4))
+        # the 4th column are all 1
+
+        # project the points onto the image plane (homogeneous coords):
+        # (U,V,_) = P2 * R0_rect * Tr_velo_to_cam * point_cloud_xyz_hom
+        # normalize: (U,V,1)
+        img_points_hom = np.dot(P2, np.dot(R0_rect, np.dot(Tr_velo_to_cam,
+                                                           point_cloud_xyz_hom.T))).T  # (point_cloud_xyz_hom.T has shape (4, num_points))
+        img_points = np.zeros((img_points_hom.shape[0], 2))
+        img_points[:, 0] = img_points_hom[:, 0] / img_points_hom[:, 2]
+        img_points[:, 1] = img_points_hom[:, 1] / img_points_hom[:, 2]
+
+        row_mask = np.logical_and(
+            np.logical_and(img_points[:, 0] >= u_left,
+                           img_points[:, 0] <= u_right),
+            np.logical_and(img_points[:, 1] >= v_upper,
+                           img_points[:, 1] <= v_bottom))
+
+
+
+        if frustum_point_cloud.shape[0] == 0:
+             detection[7] = D_rough
+             return torch.tensor(detection)
+        # elif frustum_point_cloud.shape[0] < 512:
+        #     row_idx = np.random.choice(frustum_point_cloud.shape[0], 512, replace=True)
+        # else:
+        #     row_idx = np.random.choice(frustum_point_cloud.shape[0], 512, replace=False)
+
+        frustum_point_cloud_xyz_camera = frustum_point_cloud_xyz_camera[row_idx, :]
+        ransac = linear_model.RANSACRegressor()
+        ransac.fit(frustum_point_cloud_xyz_camera[:,1].reshape(-1,1),frustum_point_cloud_xyz_camera[:,0].reshape(-1,1))
+
+        right_side_distance = ransac.predict([[frustum_point_cloud_xyz_camera[:,1].max()]])[0][0]
+        left_side_distance = ransac.predict([[frustum_point_cloud_xyz_camera[:,1].min()]])[0][0]
+
+        detection[7] = min(min(left_side_distance,right_side_distance),D_rough-2)
+        print('image id:', img_id)
+        print('Rough estimation %d, \n ransac estimation: %d %d, \n final estimation: %d' %(rough_D,left_side_distance,right_side_distance,detection[7]))
+        return torch.tensor(detection)
+
+    else:# might be a problem
+        detection[7] = float('nan')
+        return torch.tensor(detection)
