@@ -562,28 +562,26 @@ def get_frustum_point_distance_simplified(img_id, img_path, detection, kitti_pat
 def findIntersection(x1, y1, x2, y2, x3, y3, x4, y4):
     '''generate intersection point using 4 different point'''
     px = ((x1 * y2 - y1 * x2) * (x3 - x4) - (x1 - x2) * (x3 * y4 - y3 * x4)) / (
-            (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4))
+                (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4))
     py = ((x1 * y2 - y1 * x2) * (y3 - y4) - (y1 - y2) * (x3 * y4 - y3 * x4)) / (
-            (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4))
+                (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4))
     return px, py
-
 
 def findEdgePoint(x1, y1, x2, y2, x3, y3, x4, y4):
     '''
     checking point that are on the far side
     '''
-    df = [[x1, y1, 0], [x2, y2, 0], [x3, y3, 0], [x4, y4, 0]]
-    #     for point in df:
-    #         point[2]=point[0]**2+point[1]**2
-    df = sorted(df, key=lambda x: x[0] ** 2 + x[1] ** 2, reverse=True)
+    df = [[x1,y1,0],[x2,y2,0],[x3,y3,0],[x4,y4,0]]
+#     for point in df:
+#         point[2]=point[0]**2+point[1]**2
+    df = sorted(df,key=lambda x: x[0]**2+x[1]**2,reverse=True)
     # point start always from left side
     if df[0][1] <= df[1][1]:
         return df[0][0], df[0][1], df[1][0], df[1][1]
     else:
         return df[1][0], df[1][1], df[0][0], df[1][1]
 
-
-def ransac_with_bbox(point_cloud_with_mask, category, rough_D):
+def ransac_with_bbox(point_cloud_with_mask, category,rough_D):
     '''
 
     :param point_cloud_with_mask: point cloud in frustum area
@@ -592,7 +590,7 @@ def ransac_with_bbox(point_cloud_with_mask, category, rough_D):
     '''
     # category numbers are according to the datasets. Here with COCO
     # car, bus and truck
-    if category in [2, 5, 7]:
+    if category in [2,5,7]:
         '''
         idea with the car is to use ransac to filter out outliers and regression with one line that describes a
         edge. The outliers then run another ransac to generate another edge
@@ -603,88 +601,133 @@ def ransac_with_bbox(point_cloud_with_mask, category, rough_D):
         # line points for first ransac
         inlier_index = list(compress(range(len(ransac.inlier_mask_)), ransac.inlier_mask_))
         left_y_1 = point_cloud_with_mask[inlier_index, 1].min()
-        right_y_1 = point_cloud_with_mask[inlier_index, 1].max()
+        right_y_1 =  point_cloud_with_mask[inlier_index, 1].max()
         left_x_1 = ransac.predict([[left_y_1, ]])[0][0]
         right_x_1 = ransac.predict([[right_y_1, ]])[0][0]
-        print(left_x_1, left_y_1, right_x_1, right_y_1)
+        print(left_x_1,left_y_1,right_x_1,right_y_1)
 
-        drawBEV(point_cloud_mask[inlier_index, :])
+        drawBEV(point_cloud_mask[inlier_index,:])
         plt.show()
         outlier_index = list(compress(range(len(ransac.inlier_mask_)), [not i for i in ransac.inlier_mask_]))
-        outlier_point_cloud = point_cloud_with_mask[outlier_index, :]
-        if len(outlier_index) > 1 / 5 * (len(point_cloud_with_mask)):
+        outlier_point_cloud = point_cloud_with_mask[outlier_index,:]
+        if len(outlier_index)>1/5*(len(point_cloud_with_mask)):
 
             ransac.fit(outlier_point_cloud[:, 1].reshape(-1, 1),
                        outlier_point_cloud[:, 0].reshape(-1, 1))
 
             inlier_index = list(compress(range(len(ransac.inlier_mask_)), ransac.inlier_mask_))
             left_y_2 = outlier_point_cloud[inlier_index, 1].min()
-            right_y_2 = outlier_point_cloud[inlier_index, 1].max()
+            right_y_2 =  outlier_point_cloud[inlier_index, 1].max()
             left_x_2 = ransac.predict([[left_y_2, ]])[0][0]
             right_x_2 = ransac.predict([[right_y_2, ]])[0][0]
             print([left_y_1, left_y_2, right_y_1, right_y_2],
                   [left_x_1, left_x_2, right_x_1, right_x_2])
 
-            #
-            x_2, y_2 = findIntersection(left_x_1, left_y_1,
-                                        right_x_1, right_y_1,
-                                        left_x_2, left_y_2,
-                                        right_x_2, right_y_2)
-            x_1, y_1, x_3, y_3 = findEdgePoint(left_x_1, left_y_1,
-                                               right_x_1, right_y_1,
-                                               left_x_2, left_y_2,
-                                               right_x_2, right_y_2)
+            x_2, y_2 = findIntersection(left_x_1,left_y_1,
+                                        right_x_1,right_y_1,
+                                        left_x_2,left_y_2,
+                                        right_x_2,right_y_2)
+            x_1, y_1, x_3, y_3 = findEdgePoint(left_x_1,left_y_1,
+                                               right_x_1,right_y_1,
+                                               left_x_2,left_y_2,
+                                               right_x_2,right_y_2)
 
             # return coordination of 3 contour point, from left to right.
-            if D_rough - 3 < x_2 < D_rough + 3 and point_cloud_mask[:, 1].min() < y_2 < point_cloud_mask[:, 1].max():
-                return [[x_1, y_1], [x_2, y_2], [x_3, y_3]]
-            else:
-                [[left_x_1, left_y_1], [right_x_1, right_y_1]]
-        else:
-            return [[left_x_1, left_y_1], [right_x_1, right_y_1]]
+            if D_rough-3 <x_2< D_rough +3 and point_cloud_mask[:,1].min()<y_2<point_cloud_mask[:,1].max():
+                return [x_1, y_1, x_2, y_2, x_3, y_3]
+            else: [left_x_1, left_y_1, right_x_1, right_y_1]
+        else: return [left_x_1, left_y_1, right_x_1, right_y_1]
 
-    # person
+    # person: return with center position(x,y) and radius r
     elif category == 0:
         '''the idea of the human can use the center cluster to be the distance'''
 
-        return None
+        radius = 6*np.std(point_cloud_mask[:,1])
+        center_x = np.mean(point_cloud_mask[:,0])+radius
+        center_y = np.mean(point_cloud_mask[:,1])
+        return [center_x, center_y,radius]
     else:
         return None
 
-def get_frustum_rplidar_distance(detection, img_size_after_resize):
+def get_frustum_rplidar_distance(detection, point_cloud):
+
+    Height_of_camera = 1
+    img_width_orig = 1920
+    img_height_orig = 1080
     detection = detection.numpy()
+    print('x:[')
+    for point in point_cloud:
+        print('%05f,'%point[0])
+    print(']\n y:[')
+    for point in point_cloud:
+        print('%05f,'%point[1])
 
-    point_cloud = np.fromfile(lidar_path, dtype=np.float32).reshape(-1, 4)
 
+    point_cloud = point_cloud.reshape(-1, 3)
+
+    ###########################################################################################################
+    # for modular design
+    #
+    # pad_x = max(img_height_orig - img_width_orig, 0) * (max(img_size_after_resize) / max(img_width_orig, img_height_orig))
+    # pad_y = max(img_width_orig - img_height_orig, 0) * (max(img_size_after_resize) / max(img_width_orig, img_height_orig))
+    # # Image height and width after padding is removed
+    # unpad_h = img_size_after_resize[1] - pad_y
+    # unpad_w = img_size_after_resize[0] - pad_x
+    # box_h = ((detection[3] - detection[1]) / unpad_h) * img_height_orig
+    # box_w = ((detection[2] - detection[0]) / unpad_w) * img_width_orig
+    # v_upper = ((detection[1] - pad_y // 2) / unpad_h) * img_height_orig
+    # u_left = ((detection[0] - pad_x // 2) / unpad_w) * img_width_orig
+    #
+    ###########################################################################################################
+
+    pad_x = 0
+    pad_y = 182
+    # Image height and width after padding is removed
+    unpad_h = 234
+    unpad_w = 416
     box_h = ((detection[3] - detection[1]) / unpad_h) * img_height_orig
     box_w = ((detection[2] - detection[0]) / unpad_w) * img_width_orig
     v_upper = ((detection[1] - pad_y // 2) / unpad_h) * img_height_orig
     u_left = ((detection[0] - pad_x // 2) / unpad_w) * img_width_orig
+    fu = 1387.531128
+    fv = 1387.352051
+    #project matrix
+    Pj=np.array([[1387.531128,  0.0,        956.005127, 0.0],
+                 [0.0,          1387.352051,558.462280, 0.0],
+                 [0.0,          0.0,        1.0,        0.0]
+                 ])
+
     v_bottom = v_upper + box_h
     u_right = u_left + box_w
     D_rough = Height_of_camera * fv / (v_bottom - img_height_orig / 2)
+
+    '''  resolutionRGB: 1920 1080
+
+  FocalLengthColor: 1387.531128 1387.352051
+  PrincipalPointColor: 956.005127 558.462280
+  DistortionColor: 0.000000 0.000000 0.000000 0.000000 0.000000
+  RotationLeftColor: 0.999866 -0.014898 0.006766
+                     0.014936 0.999873 -0.005493
+                     -0.006683 0.005593 0.999962
+  TranslationLeftColor: 14.999831 0.375140 0.036474'''
+
     if D_rough > 0:
         # remove points that are located behind the camera:
         point_cloud = point_cloud[point_cloud[:, 0] > (D_rough - 3), :]
         # remove points that are located too far away from the camera:
-        point_cloud = point_cloud[point_cloud[:, 0] < min(80, D_rough + 3), :]
-        point_cloud = point_cloud[point_cloud[:, 2] > -1.5, :]
-        point_cloud = point_cloud[point_cloud[:, 2] < -1, :]
+        point_cloud = point_cloud[point_cloud[:, 0] < (D_rough + 3), :]
 
-        ########################################################################
-        # point_cloud               n x 4   original xyzr value before cali in velo coordinate
-        # point_cloud_xyz           n x 3   xyz value before cali in velo coordinate
-        # point_cloud_xyz_hom       n x 4   xyz1 in velo coordinate
-        # point_cloud_xyz_camera    n x 4   xyz1 in camera coordinate
-        # point_cloud_camera        n x 4   xyzr in camera coordinate
-        # img_points_hom            n x 3   uv_
-        # img_points                n x 2   UV
-        ########################################################################
 
-        R0_rect = np.eye(4)
-        R0_rect[0:3, 0:3] = calib["R0_rect"]  # 3x3 -> 4x4 up left corner
-        Tr_velo_to_cam = np.eye(4)
-        Tr_velo_to_cam[0:3, :] = calib["Tr_velo_to_cam"]  # 3x4 -> 4x4 up left corner
+
+        R0_rect = np.array([[0.999866, -0.014898, 0.006766, 0],
+                     [0.014936, 0.999873, -0.005493, 0.0],
+                     [-0.006683, 0.005593, 0.999962, 0.0],
+                     [0.0, 0.0, 0.0, 1.0]])
+
+        Tr_velo_to_cam = np.array([[1, 0, 0, 0.04],
+                                   [0, 1, 0, 0.0],
+                                   [0, 0, 1, 0.01],
+                                   [0, 0, 0, 1]])
 
         # point_cloud_xyz = point_cloud[:, 0:3] # num_point x 3 (x,y,z,reflectance) reflectance don't need
         point_cloud_xyz_hom = np.ones((point_cloud.shape[0], 4))
@@ -694,7 +737,7 @@ def get_frustum_rplidar_distance(detection, img_size_after_resize):
         # project the points onto the image plane (homogeneous coords):
         # (U,V,_) = P2 * R0_rect * Tr_velo_to_cam * point_cloud_xyz_hom
         # normalize: (U,V,1)
-        img_points_hom = np.dot(P2, np.dot(R0_rect, np.dot(Tr_velo_to_cam,
+        img_points_hom = np.dot(Pj, np.dot(R0_rect, np.dot(Tr_velo_to_cam,
                                                            point_cloud_xyz_hom.T))).T  # (point_cloud_xyz_hom.T has shape (4, num_points))
         img_points = np.zeros((img_points_hom.shape[0], 2))
         img_points[:, 0] = img_points_hom[:, 0] / img_points_hom[:, 2]
@@ -707,27 +750,20 @@ def get_frustum_rplidar_distance(detection, img_size_after_resize):
                            img_points[:, 1] <= v_bottom))
 
 
+        if detection[-4] ==0:
+            if point_cloud[row_mask,:].shape[0] == 0:
+                detection[-3:] = np.array([0,0,D_rough])
+                return torch.tensor(detection)
 
-        if frustum_point_cloud.shape[0] == 0:
-             detection[7] = D_rough
-             return torch.tensor(detection)
-        # elif frustum_point_cloud.shape[0] < 512:
-        #     row_idx = np.random.choice(frustum_point_cloud.shape[0], 512, replace=True)
-        # else:
-        #     row_idx = np.random.choice(frustum_point_cloud.shape[0], 512, replace=False)
+            detection[-3:]=ransac_with_bbox(point_cloud[row_mask,:], 0, D_rough)
 
-        frustum_point_cloud_xyz_camera = frustum_point_cloud_xyz_camera[row_idx, :]
-        ransac = linear_model.RANSACRegressor()
-        ransac.fit(frustum_point_cloud_xyz_camera[:,1].reshape(-1,1),frustum_point_cloud_xyz_camera[:,0].reshape(-1,1))
-
-        right_side_distance = ransac.predict([[frustum_point_cloud_xyz_camera[:,1].max()]])[0][0]
-        left_side_distance = ransac.predict([[frustum_point_cloud_xyz_camera[:,1].min()]])[0][0]
-
-        detection[7] = min(min(left_side_distance,right_side_distance),D_rough-2)
-        print('image id:', img_id)
-        print('Rough estimation %d, \n ransac estimation: %d %d, \n final estimation: %d' %(rough_D,left_side_distance,right_side_distance,detection[7]))
+        #
+        # detection[7] = min(min(left_side_distance,right_side_distance),D_rough-2)
+        # print('image id:', img_id)
+        #
+        # print('Rough estimation %d, \n ransac estimation: %d %d, \n final estimation: %d' %(rough_D,left_side_distance,right_side_distance,detection[7]))
         return torch.tensor(detection)
-
-    else:# might be a problem
-        detection[7] = float('nan')
-        return torch.tensor(detection)
+    #
+    # else:# might be a problem
+    #     detection[7] = float('nan')
+    #     return torch.tensor(detection)
