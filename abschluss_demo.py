@@ -57,7 +57,6 @@ config.enable_stream(rs.stream.color, 1920, 1080, rs.format.bgr8, 30)
 pipeline.start(config)
 
 CUDA = torch.cuda.is_available() and opt.use_cuda
-# os.makedirs('output', exist_ok=True)
 
 # Set up model
 model = Darknet(opt.config_path, img_size=opt.img_size)
@@ -74,14 +73,12 @@ def callback(msg):
     num_points = len(msg.ranges)
     angle_increment = msg.angle_increment
     i=0
-     # only points in the front
 
-    for point in msg.ranges[-90:]+msg.ranges[:90]:
+    for point in msg.ranges:
         if point!=float('Inf'):
             # print("point!=inf")
             point_cloud_raw = np.append(point_cloud_raw,[[point*np.cos(i),point*np.sin(i),0.0]],axis=0)
         else:
-            # print("point=inf")
             pass
         i+=angle_increment
 
@@ -128,7 +125,7 @@ try:
                     detection = get_frustum_rplidar_distance(detection, point_cloud_raw)
             except:
                 pass
-        # print(pc.point_cloud_raw)
+
         if type(detections) == int:
             frames += 1
             print("FPS of the video is {:5.4f}".format(frames / (time.time() - start_time)))
@@ -150,7 +147,8 @@ try:
         for i in range(detections_with_distance.shape[0]):
             detections_with_distance[i, [0,2]] = torch.clamp(detections_with_distance[i, [0,2]], 0.0, img_dim[i,0])
             detections_with_distance[i, [1,3]] = torch.clamp(detections_with_distance[i, [1,3]], 0.0, img_dim[i,1])
-            # Clamp all elements in input into the range [ min, max ] and return a resulting tensor
+
+        # Clamp all elements in input into the range [ min, max ] and return a resulting tensor
         # detections = torch.cat(detections)
         # img_dim = img_dim.repeat(detections.size(0), 1)
         # scaling_factor = torch.min(opt.img_size/img_dim,1)[0].view(-1,1)

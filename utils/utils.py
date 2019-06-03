@@ -651,10 +651,11 @@ def ransac_with_bbox(point_cloud_with_mask, category,rough_D):
 
 def get_frustum_rplidar_distance(detection, point_cloud):
 
-    Height_of_camera = 1
+    # Height_of_camera = 1
     img_width_orig = 1920
     img_height_orig = 1080
     detection = detection.numpy()
+
     print('x:[')
     for point in point_cloud:
         print('%05f,'%point[0])
