@@ -650,121 +650,32 @@ def ransac_with_bbox(point_cloud_with_mask, category,rough_D):
         return None
 
 def get_frustum_rplidar_distance(detection, point_cloud):
-
-    # Height_of_camera = 1
-    img_width_orig = 1920
-    img_height_orig = 1080
     detection = detection.numpy()
+    if detection[-4]==0:
+        img_width_orig = 1920
+        fu = 1387.531128
+        unpad_w = 416
+        point_cloud = point_cloud.reshape(-1, 2)
 
-    print('x:[')
-    for point in point_cloud:
-        print('%05f,'%point[0])
-    print(']\n y:[')
-    for point in point_cloud:
-        print('%05f,'%point[1])
+        box_w = ((detection[2] - detection[0]) / unpad_w) * img_width_orig
+        u_left = (detection[0] / unpad_w) * img_width_orig
 
+        angle_left = np.arctan2(u_left - 0.5 * img_width_orig, fu) + np.pi/2
+        angle_right = np.arctan2((u_left + box_w) - 0.5* img_width_orig, fu) + np.pi/2
+        row_mask = np.logical_and(point_cloud[:,0] >= angle_left, point_cloud[:,0] <= angle_right)
+        if len(row_mask)!=0:
+            point_cloud_mask = np.empty((0,2))
 
-    point_cloud = point_cloud.reshape(-1, 3)
+            for point in point_cloud[row_mask]:
+                point_cloud_mask = np.append(point_cloud_mask,[[point[1]*np.cos(point[0]),point[1]*np.sin(point[0])]],axis=0)
 
-    ###########################################################################################################
-    # for modular design
-    #
-    # pad_x = max(img_height_orig - img_width_orig, 0) * (max(img_size_after_resize) / max(img_width_orig, img_height_orig))
-    # pad_y = max(img_width_orig - img_height_orig, 0) * (max(img_size_after_resize) / max(img_width_orig, img_height_orig))
-    # # Image height and width after padding is removed
-    # unpad_h = img_size_after_resize[1] - pad_y
-    # unpad_w = img_size_after_resize[0] - pad_x
-    # box_h = ((detection[3] - detection[1]) / unpad_h) * img_height_orig
-    # box_w = ((detection[2] - detection[0]) / unpad_w) * img_width_orig
-    # v_upper = ((detection[1] - pad_y // 2) / unpad_h) * img_height_orig
-    # u_left = ((detection[0] - pad_x // 2) / unpad_w) * img_width_orig
-    #
-    ###########################################################################################################
+            center_x = np.median(point_cloud_mask[:,1])+0.4
+            center_y = np.median(point_cloud_mask[:,0])
+            radius = box_w/fu * center_x
 
-    pad_x = 0
-    pad_y = 182
-    # Image height and width after padding is removed
-    unpad_h = 234
-    unpad_w = 416
-    box_h = ((detection[3] - detection[1]) / unpad_h) * img_height_orig
-    box_w = ((detection[2] - detection[0]) / unpad_w) * img_width_orig
-    v_upper = ((detection[1] - pad_y // 2) / unpad_h) * img_height_orig
-    u_left = ((detection[0] - pad_x // 2) / unpad_w) * img_width_orig
-    fu = 1387.531128
-    fv = 1387.352051
-    #project matrix
-    Pj=np.array([[1387.531128,  0.0,        956.005127, 0.0],
-                 [0.0,          1387.352051,558.462280, 0.0],
-                 [0.0,          0.0,        1.0,        0.0]
-                 ])
+            return torch.tensor([center_x, center_y, radius])
+        else:
+            return torch.tensor([0, 0, 0])
 
-    v_bottom = v_upper + box_h
-    u_right = u_left + box_w
-    D_rough = Height_of_camera * fv / (v_bottom - img_height_orig / 2)
-
-    '''  resolutionRGB: 1920 1080
-
-  FocalLengthColor: 1387.531128 1387.352051
-  PrincipalPointColor: 956.005127 558.462280
-  DistortionColor: 0.000000 0.000000 0.000000 0.000000 0.000000
-  RotationLeftColor: 0.999866 -0.014898 0.006766
-                     0.014936 0.999873 -0.005493
-                     -0.006683 0.005593 0.999962
-  TranslationLeftColor: 14.999831 0.375140 0.036474'''
-
-    if D_rough > 0:
-        # remove points that are located behind the camera:
-        point_cloud = point_cloud[point_cloud[:, 0] > (D_rough - 3), :]
-        # remove points that are located too far away from the camera:
-        point_cloud = point_cloud[point_cloud[:, 0] < (D_rough + 3), :]
-
-
-
-        R0_rect = np.array([[0.999866, -0.014898, 0.006766, 0],
-                     [0.014936, 0.999873, -0.005493, 0.0],
-                     [-0.006683, 0.005593, 0.999962, 0.0],
-                     [0.0, 0.0, 0.0, 1.0]])
-
-        Tr_velo_to_cam = np.array([[1, 0, 0, 0.04],
-                                   [0, 1, 0, 0.0],
-                                   [0, 0, 1, 0.01],
-                                   [0, 0, 0, 1]])
-
-        # point_cloud_xyz = point_cloud[:, 0:3] # num_point x 3 (x,y,z,reflectance) reflectance don't need
-        point_cloud_xyz_hom = np.ones((point_cloud.shape[0], 4))
-        point_cloud_xyz_hom[:, 0:3] = point_cloud[:, 0:3]  # (point_cloud_xyz_hom has shape (num_points, 4))
-        # the 4th column are all 1
-
-        # project the points onto the image plane (homogeneous coords):
-        # (U,V,_) = P2 * R0_rect * Tr_velo_to_cam * point_cloud_xyz_hom
-        # normalize: (U,V,1)
-        img_points_hom = np.dot(Pj, np.dot(R0_rect, np.dot(Tr_velo_to_cam,
-                                                           point_cloud_xyz_hom.T))).T  # (point_cloud_xyz_hom.T has shape (4, num_points))
-        img_points = np.zeros((img_points_hom.shape[0], 2))
-        img_points[:, 0] = img_points_hom[:, 0] / img_points_hom[:, 2]
-        img_points[:, 1] = img_points_hom[:, 1] / img_points_hom[:, 2]
-
-        row_mask = np.logical_and(
-            np.logical_and(img_points[:, 0] >= u_left,
-                           img_points[:, 0] <= u_right),
-            np.logical_and(img_points[:, 1] >= v_upper,
-                           img_points[:, 1] <= v_bottom))
-
-
-        if detection[-4] ==0:
-            if point_cloud[row_mask,:].shape[0] == 0:
-                detection[-3:] = np.array([0,0,D_rough])
-                return torch.tensor(detection)
-
-            detection[-3:]=ransac_with_bbox(point_cloud[row_mask,:], 0, D_rough)
-
-        #
-        # detection[7] = min(min(left_side_distance,right_side_distance),D_rough-2)
-        # print('image id:', img_id)
-        #
-        # print('Rough estimation %d, \n ransac estimation: %d %d, \n final estimation: %d' %(rough_D,left_side_distance,right_side_distance,detection[7]))
-        return torch.tensor(detection)
-    #
-    # else:# might be a problem
-    #     detection[7] = float('nan')
-    #     return torch.tensor(detection)
+    else:
+        return torch.tensor([0, 0, 0])

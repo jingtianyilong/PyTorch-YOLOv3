@@ -17,16 +17,15 @@ import numpy as np
 import random
 import rospy
 from sensor_msgs.msg import LaserScan
-# from utils.laserSub import LaserSubs
 
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--config_path', type=str, default='config/v390.cfg', help='path to model config file')
-parser.add_argument('--weights_path', type=str, default='/home/project/ZijieMA/Trained_archiv/coco/v390_final.weights', help='path to weights file')
-# parser.add_argument('--weights_path', type=str, default='weights/v390_500000.weights', help='path to weights file')
+# parser.add_argument('--weights_path', type=str, default='/home/project/ZijieMA/Trained_archiv/coco/v390_final.weights', help='path to weights file')
+parser.add_argument('--weights_path', type=str, default='weights/v390_final.weights', help='path to weights file')
 parser.add_argument('--class_path', type=str, default='data/coco.names', help='path to class label file')
-parser.add_argument('--conf_thres', type=float, default=0.5, help='object confidence threshold')
-parser.add_argument('--nms_thres', type=float, default=0.4, help='iou thresshold for non-maximum suppression')
+parser.add_argument('--conf_thres', type=float, default=0.4, help='object confidence threshold')
+parser.add_argument('--nms_thres', type=float, default=0.45, help='iou thresshold for non-maximum suppression')
 parser.add_argument('--batch_size', type=int, default=1, help='size of the batches')
 parser.add_argument('--n_cpu', type=int, default=8, help='number of cpu threads to use during batch generation')
 parser.add_argument('--img_size', type=list, default=416, help='size of each image dimension')
@@ -39,7 +38,7 @@ def write(x, results):
     c2 = tuple(x[2:4].int())
     img = results
 
-    label = "{},({},{}),{:4f}".format(classes[int(x[-4])],x[-3],x[-2],x[-1])
+    label = "{},({:1f},{:1f}),{:1f}".format(classes[int(x[-4])],x[-3],x[-2],x[-1])
     cv2.rectangle(img, c1, c2,(255,0,0), 4)
     t_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_DUPLEX, 1 , 1)[0]
     c2 = c1[0] + t_size[0] + 5, c1[1] + t_size[1] + 6
@@ -69,15 +68,14 @@ point_cloud_raw = np.empty((0,2))
 def callback(msg):
 
     global point_cloud_raw
-    point_cloud_raw = np.empty((0,3))
+    point_cloud_raw = np.empty((0,2))
     num_points = len(msg.ranges)
     angle_increment = msg.angle_increment
     i=0
 
-    for point in msg.ranges:
+    for point in msg.ranges[0:180]:
         if point!=float('Inf'):
-            # print("point!=inf")
-            point_cloud_raw = np.append(point_cloud_raw,[[point*np.cos(i),point*np.sin(i),0.0]],axis=0)
+            point_cloud_raw = np.append(point_cloud_raw,[[np.pi-i,point]],axis=0)
         else:
             pass
         i+=angle_increment
@@ -122,7 +120,7 @@ try:
                 detections_with_distance[:,:-3] = detections[0]
 
                 for detection in detections_with_distance:
-                    detection = get_frustum_rplidar_distance(detection, point_cloud_raw)
+                    detection[-3:] = get_frustum_rplidar_distance(detection, point_cloud_raw)
             except:
                 pass
 
@@ -147,22 +145,6 @@ try:
         for i in range(detections_with_distance.shape[0]):
             detections_with_distance[i, [0,2]] = torch.clamp(detections_with_distance[i, [0,2]], 0.0, img_dim[i,0])
             detections_with_distance[i, [1,3]] = torch.clamp(detections_with_distance[i, [1,3]], 0.0, img_dim[i,1])
-
-        # Clamp all elements in input into the range [ min, max ] and return a resulting tensor
-        # detections = torch.cat(detections)
-        # img_dim = img_dim.repeat(detections.size(0), 1)
-        # scaling_factor = torch.min(opt.img_size/img_dim,1)[0].view(-1,1)
-        # # view() transform the tensor in different size. in this case -1 means don't care. But column must be 1
-        #
-        # detections[:,[0,2]] -= (input_dim - scaling_factor*img_dim[:,0].view(-1,1))/2
-        # detections[:,[1,3]] -= (input_dim - scaling_factor*img_dim[:,1].view(-1,1))/2
-        #
-        # detections[:,0:4] /= scaling_factor
-        #
-        # for i in range(detections.shape[0]):
-        #     detections[i, [0,2]] = torch.clamp(detections[i, [0,2]], 0.0, img_dim[i,0])
-        #     detections[i, [1,3]] = torch.clamp(detections[i, [1,3]], 0.0, img_dim[i,1])
-        #     # Clamp all elements in input into the range [ min, max ] and return a resulting tensor
 
 
         classes = load_classes('data/coco.names')
