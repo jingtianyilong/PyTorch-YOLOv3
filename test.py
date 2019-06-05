@@ -1,3 +1,8 @@
+'''
+mAP testing faster with AlexeyAB/darknet with command
+$ ./darknet detector map cfg/coco.data cfg/v390.cfg backup/v390_final.weights -iou_thresh 0.5
+faster with this approach
+'''
 from __future__ import division
 
 from models import *

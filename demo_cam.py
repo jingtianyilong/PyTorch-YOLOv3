@@ -1,3 +1,7 @@
+'''
+This is used for camera detection. Only with normal webcam
+realsense camera need extra pipeline to get image stream
+'''
 import cv2
 import argparse
 import time
@@ -16,13 +20,13 @@ print('start program')
 parser = argparse.ArgumentParser()
 parser.add_argument('--config_path', type=str, default='config/v390.cfg', help='path to model config file')
 # parser.add_argument('--weights_path', type=str, default='/home/zijieguo/project/darknet/yolov3.weights', help='path to weights file')
-parser.add_argument('--weights_path', type=str, default='weights/v390_500000.weights', help='path to weights file')
+parser.add_argument('--weights_path', type=str, default='weights/v390_final.weights', help='path to weights file')
 parser.add_argument('--class_path', type=str, default='data/coco.names', help='path to class label file')
 parser.add_argument('--conf_thres', type=float, default=0.5, help='object confidence threshold')
 parser.add_argument('--nms_thres', type=float, default=0.4, help='iou thresshold for non-maximum suppression')
 parser.add_argument('--batch_size', type=int, default=1, help='size of the batches')
 parser.add_argument('--n_cpu', type=int, default=8, help='number of cpu threads to use during batch generation')
-parser.add_argument('--img_size', type=list, default=[416,416], help='size of each image dimension')
+parser.add_argument('--img_size', type=list, default=416, help='size of each image dimension')
 parser.add_argument('--use_cuda', type=bool, default=True, help='whether to use cuda if available')
 opt = parser.parse_args()
 print(opt)
@@ -55,9 +59,12 @@ if CUDA:
 
 model.eval() # Set in evaluation mode
 
-video_file = '/home/zijieguo/project/darknet/IMG_8765.mov'
-cap = cv2.VideoCapture(video_file)
-# cap = cv2.VideoCapture(0)
+# if you want to detect a video
+# video_file = '/home/zijieguo/project/darknet/IMG_8765.mov'
+# cap = cv2.VideoCapture(video_file)
+
+# if you want to detect with a webcam
+cap = cv2.VideoCapture(0)
 
 
 assert cap.isOpened(), 'failed to load camera video'
@@ -92,28 +99,30 @@ while cap.isOpened():
             if key & 0xFF == ord('q'):
                 break
             continue
+        try:
+            detections = torch.cat(detections)
+            img_dim = img_dim.repeat(detections.size(0), 1)
+            scaling_factor = torch.min(opt.img_size/img_dim,1)[0].view(-1,1)
+            # view() transform the tensor in different size. in this case -1 means don't care. But column must be 1
 
-        detections = torch.cat(detections)
-        img_dim = img_dim.repeat(detections.size(0), 1)
-        scaling_factor = torch.min(opt.img_size[0]/img_dim,1)[0].view(-1,1)
-        # view() transform the tensor in different size. in this case -1 means don't care. But column must be 1
-        
-        detections[:,[0,2]] -= (input_dim - scaling_factor*img_dim[:,0].view(-1,1))/2
-        detections[:,[1,3]] -= (input_dim - scaling_factor*img_dim[:,1].view(-1,1))/2
+            detections[:,[0,2]] -= (input_dim - scaling_factor*img_dim[:,0].view(-1,1))/2
+            detections[:,[1,3]] -= (input_dim - scaling_factor*img_dim[:,1].view(-1,1))/2
 
-        detections[:,0:4] /= scaling_factor
+            detections[:,0:4] /= scaling_factor
 
-        for i in range(detections.shape[0]):
-            detections[i, [0,2]] = torch.clamp(detections[i, [0,2]], 0.0, img_dim[i,0])
-            detections[i, [1,3]] = torch.clamp(detections[i, [1,3]], 0.0, img_dim[i,1])
-            # Clamp all elements in input into the range [ min, max ] and return a resulting tensor
+            for i in range(detections.shape[0]):
+                detections[i, [0,2]] = torch.clamp(detections[i, [0,2]], 0.0, img_dim[i,0])
+                detections[i, [1,3]] = torch.clamp(detections[i, [1,3]], 0.0, img_dim[i,1])
+                # Clamp all elements in input into the range [ min, max ] and return a resulting tensor
 
 
-        FPS = frames/(time.time()-start_time)
-        classes = load_classes('data/coco.names')
-        colors = pkl.load(open("pallete", "rb"))
+            FPS = frames/(time.time()-start_time)
+            classes = load_classes('data/coco.names')
+            colors = pkl.load(open("pallete", "rb"))
 
-        list(map(lambda x: write(x, frame), detections))
+            list(map(lambda x: write(x, frame), detections))
+        except:
+            pass
 
         cv2.imshow("frame", frame)
         key = cv2.waitKey(1)

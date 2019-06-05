@@ -301,8 +301,9 @@ def prep_image(img, input_dim):
     return img
 
 def unique(tensor):
+    # return an sorted array that has no duplicate element
     tensor_np = tensor.cpu().numpy()
-    unique_np = np.unique(tensor_np) # return an sorted array that has no duplicate element
+    unique_np = np.unique(tensor_np)
     unique_tensor = torch.from_numpy(unique_np)
 
     tensor_res = tensor.new(unique_tensor.shape)
@@ -475,44 +476,61 @@ def get_frustum_point_distance(img_id, img_path, detection, kitti_path, img_size
         return torch.tensor(detection)
 
 def get_frustum_point_distance_simplified(img_id, img_path, detection, kitti_path, img_size_after_resize):
+    '''
+    ###############################################################################################
+    Only return distance(in x_direction)
+    if you want the contour estimation, go to visualization_ipynote/Ransac with Edges.ipynb
+    ###############################################################################################
+    :param img_id: dataset image id on kitti
+    :param img_path: used to read the image and check the size(if the image are all in same size we can eliminate this)
+    :param detection: bounding box information from CNN
+    :param kitti_path: to joint the path
+    :param img_size_after_resize: input size of the CNN
+    :return:
+    '''
+
     detection = detection.numpy()
+
+    # read information about point cloud, image and the calibration data
     img_id = int(img_path[0][-10:-4])
     lidar_path = '%straining/velodyne/%06d.bin' % (kitti_path, img_id)
     calib = calibread('%straining/calib/%06d.txt' % (kitti_path, img_id))
     img = cv2.imread('/home/project/ZijieMA/PyTorch-YOLOv3/examples/%06d.png' % img_id, cv2.IMREAD_UNCHANGED)
     point_cloud = np.fromfile(lidar_path, dtype=np.float32).reshape(-1, 4)
 
+    # calculate the bounding box information in original size
     box_h = ((detection[3] - detection[1]) / unpad_h) * img_height_orig
     box_w = ((detection[2] - detection[0]) / unpad_w) * img_width_orig
     v_upper = ((detection[1] - pad_y // 2) / unpad_h) * img_height_orig
     u_left = ((detection[0] - pad_x // 2) / unpad_w) * img_width_orig
     v_bottom = v_upper + box_h
     u_right = u_left + box_w
+
+    # rough estimation if the camera is front facing
     D_rough = Height_of_camera * fv / (v_bottom - img_height_orig / 2)
     if D_rough > 0:
         # remove points that are located behind the camera:
         point_cloud = point_cloud[point_cloud[:, 0] > (D_rough - 3), :]
         # remove points that are located too far away from the camera:
         point_cloud = point_cloud[point_cloud[:, 0] < min(80, D_rough + 3), :]
+        # remove points that are above and under certain height (make sure the contour of the vehicle is L-shape)
         point_cloud = point_cloud[point_cloud[:, 2] > -1.5, :]
         point_cloud = point_cloud[point_cloud[:, 2] < -1, :]
 
         ########################################################################
         # point_cloud               n x 4   original xyzr value before cali in velo coordinate
-        # point_cloud_xyz           n x 3   xyz value before cali in velo coordinate
         # point_cloud_xyz_hom       n x 4   xyz1 in velo coordinate
-        # point_cloud_xyz_camera    n x 4   xyz1 in camera coordinate
-        # point_cloud_camera        n x 4   xyzr in camera coordinate
         # img_points_hom            n x 3   uv_
         # img_points                n x 2   UV
         ########################################################################
 
+        # those actually transform all the points to the camera0 coordination.(we use camera2)
         R0_rect = np.eye(4)
         R0_rect[0:3, 0:3] = calib["R0_rect"]  # 3x3 -> 4x4 up left corner
         Tr_velo_to_cam = np.eye(4)
         Tr_velo_to_cam[0:3, :] = calib["Tr_velo_to_cam"]  # 3x4 -> 4x4 up left corner
 
-        # point_cloud_xyz = point_cloud[:, 0:3] # num_point x 3 (x,y,z,reflectance) reflectance don't need
+        # remove reflection information from point_cloud
         point_cloud_xyz_hom = np.ones((point_cloud.shape[0], 4))
         point_cloud_xyz_hom[:, 0:3] = point_cloud[:, 0:3]  # (point_cloud_xyz_hom has shape (num_points, 4))
         # the 4th column are all 1
@@ -526,21 +544,16 @@ def get_frustum_point_distance_simplified(img_id, img_path, detection, kitti_pat
         img_points[:, 0] = img_points_hom[:, 0] / img_points_hom[:, 2]
         img_points[:, 1] = img_points_hom[:, 1] / img_points_hom[:, 2]
 
+        # index of the points in the
         row_mask = np.logical_and(
             np.logical_and(img_points[:, 0] >= u_left,
                            img_points[:, 0] <= u_right),
             np.logical_and(img_points[:, 1] >= v_upper,
                            img_points[:, 1] <= v_bottom))
 
-
-
         if frustum_point_cloud.shape[0] == 0:
              detection[7] = D_rough
              return torch.tensor(detection)
-        # elif frustum_point_cloud.shape[0] < 512:
-        #     row_idx = np.random.choice(frustum_point_cloud.shape[0], 512, replace=True)
-        # else:
-        #     row_idx = np.random.choice(frustum_point_cloud.shape[0], 512, replace=False)
 
         frustum_point_cloud_xyz_camera = frustum_point_cloud_xyz_camera[row_idx, :]
         ransac = linear_model.RANSACRegressor()
@@ -569,7 +582,7 @@ def findIntersection(x1, y1, x2, y2, x3, y3, x4, y4):
 
 def findEdgePoint(x1, y1, x2, y2, x3, y3, x4, y4):
     '''
-    checking point that are on the far side
+    checking point that are on the far side given 2 lines described using 4 points.
     '''
     df = [[x1,y1,0],[x2,y2,0],[x3,y3,0],[x4,y4,0]]
 #     for point in df:
@@ -583,7 +596,7 @@ def findEdgePoint(x1, y1, x2, y2, x3, y3, x4, y4):
 
 def ransac_with_bbox(point_cloud_with_mask, category,rough_D):
     '''
-
+    designed for KITTI detection
     :param point_cloud_with_mask: point cloud in frustum area
     :param n_sample: sample to start ransac(should be less than len(point_cloud_with_mask))
     :param category: decide how we deal with the regresion
@@ -595,21 +608,23 @@ def ransac_with_bbox(point_cloud_with_mask, category,rough_D):
         idea with the car is to use ransac to filter out outliers and regression with one line that describes a
         edge. The outliers then run another ransac to generate another edge
         '''
-        ransac = linear_model.RANSACRegressor(max_trials=1000, stop_probability=0.999)
+        # points that are have distance larger than 0.1 will regard as outlier
+        ransac = linear_model.RANSACRegressor(residual_threshold=0.1)
         ransac.fit(point_cloud_with_mask[:, 1].reshape(-1, 1), point_cloud_with_mask[:, 0].reshape(-1, 1))
 
         # line points for first ransac
         inlier_index = list(compress(range(len(ransac.inlier_mask_)), ransac.inlier_mask_))
+        # side vertex for each line
         left_y_1 = point_cloud_with_mask[inlier_index, 1].min()
         right_y_1 =  point_cloud_with_mask[inlier_index, 1].max()
         left_x_1 = ransac.predict([[left_y_1, ]])[0][0]
         right_x_1 = ransac.predict([[right_y_1, ]])[0][0]
-        print(left_x_1,left_y_1,right_x_1,right_y_1)
 
-        drawBEV(point_cloud_mask[inlier_index,:])
-        plt.show()
+        # list out all the outlier
         outlier_index = list(compress(range(len(ransac.inlier_mask_)), [not i for i in ransac.inlier_mask_]))
         outlier_point_cloud = point_cloud_with_mask[outlier_index,:]
+
+        # run the second ransac only when outlier points are more than 0.5
         if len(outlier_index)>1/5*(len(point_cloud_with_mask)):
 
             ransac.fit(outlier_point_cloud[:, 1].reshape(-1, 1),
@@ -620,9 +635,8 @@ def ransac_with_bbox(point_cloud_with_mask, category,rough_D):
             right_y_2 =  outlier_point_cloud[inlier_index, 1].max()
             left_x_2 = ransac.predict([[left_y_2, ]])[0][0]
             right_x_2 = ransac.predict([[right_y_2, ]])[0][0]
-            print([left_y_1, left_y_2, right_y_1, right_y_2],
-                  [left_x_1, left_x_2, right_x_1, right_x_2])
 
+            # intersection point of two ransec result
             x_2, y_2 = findIntersection(left_x_1,left_y_1,
                                         right_x_1,right_y_1,
                                         left_x_2,left_y_2,
@@ -633,6 +647,7 @@ def ransac_with_bbox(point_cloud_with_mask, category,rough_D):
                                                right_x_2,right_y_2)
 
             # return coordination of 3 contour point, from left to right.
+            # make sure the intersection point is in the area
             if D_rough-3 <x_2< D_rough +3 and point_cloud_mask[:,1].min()<y_2<point_cloud_mask[:,1].max():
                 return [x_1, y_1, x_2, y_2, x_3, y_3]
             else: [left_x_1, left_y_1, right_x_1, right_y_1]
@@ -643,33 +658,42 @@ def ransac_with_bbox(point_cloud_with_mask, category,rough_D):
         '''the idea of the human can use the center cluster to be the distance'''
 
         radius = 6*np.std(point_cloud_mask[:,1])
-        center_x = np.mean(point_cloud_mask[:,0])+radius
-        center_y = np.mean(point_cloud_mask[:,1])
+        center_x = np.median(point_cloud_mask[:,0])+0.2
+        center_y = np.median(point_cloud_mask[:,1])
         return [center_x, center_y,radius]
     else:
         return None
 
 def get_frustum_rplidar_distance(detection, point_cloud):
+    '''designed for the abschluss demo
+    only for human detection
+    without rough estimation using image
+    without all those matrix to find the frustum region
+    '''
     detection = detection.numpy()
-    if detection[-4]==0:
-        img_width_orig = 1920
-        fu = 1387.531128
-        unpad_w = 416
+    if detection[-4]==0: # make sure it is a person
+        img_width_orig = 1920 # image width
+        fu = 1387.531128 # focal length in u_coordination
+        unpad_w = 416 # detection information from CNN is with this size
         point_cloud = point_cloud.reshape(-1, 2)
 
+        # calculate the bounding box information in original size
         box_w = ((detection[2] - detection[0]) / unpad_w) * img_width_orig
         u_left = (detection[0] / unpad_w) * img_width_orig
 
+        # calculate the angle to the side of the bounding box
         angle_left = np.arctan2(u_left - 0.5 * img_width_orig, fu) + np.pi/2
         angle_right = np.arctan2((u_left + box_w) - 0.5* img_width_orig, fu) + np.pi/2
         row_mask = np.logical_and(point_cloud[:,0] >= angle_left, point_cloud[:,0] <= angle_right)
+
         if len(row_mask)!=0:
             point_cloud_mask = np.empty((0,2))
 
             for point in point_cloud[row_mask]:
                 point_cloud_mask = np.append(point_cloud_mask,[[point[1]*np.cos(point[0]),point[1]*np.sin(point[0])]],axis=0)
 
-            center_x = np.median(point_cloud_mask[:,1])+0.4
+            # coordination and radius of the detected human
+            center_x = np.median(point_cloud_mask[:,1])+0.2
             center_y = np.median(point_cloud_mask[:,0])
             radius = box_w/fu * center_x
 

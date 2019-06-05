@@ -24,7 +24,7 @@ parser.add_argument('--config_path', type=str, default='config/v390.cfg', help='
 # parser.add_argument('--weights_path', type=str, default='/home/project/ZijieMA/Trained_archiv/coco/v390_final.weights', help='path to weights file')
 parser.add_argument('--weights_path', type=str, default='weights/v390_final.weights', help='path to weights file')
 parser.add_argument('--class_path', type=str, default='data/coco.names', help='path to class label file')
-parser.add_argument('--conf_thres', type=float, default=0.4, help='object confidence threshold')
+parser.add_argument('--conf_thres', type=float, default=0.5, help='object confidence threshold')
 parser.add_argument('--nms_thres', type=float, default=0.45, help='iou thresshold for non-maximum suppression')
 parser.add_argument('--batch_size', type=int, default=1, help='size of the batches')
 parser.add_argument('--n_cpu', type=int, default=8, help='number of cpu threads to use during batch generation')
@@ -34,13 +34,21 @@ opt = parser.parse_args()
 print(opt)
 
 def write(x, results):
+    '''
+    write the image with bounding boxes and the labels
+    :param x: (x,y,width,height,objectness,lable,center_x,center_y,radius)
+    :param results:
+    :return:
+    '''
+    # coordination of the bounding box
     c1 = tuple(x[0:2].int())
+    # dimension of the bounding box
     c2 = tuple(x[2:4].int())
     img = results
 
-    label = "{},({:1f},{:1f}),{:1f}".format(classes[int(x[-4])],x[-3],x[-2],x[-1])
+    label = "{},({:2f},{:2f}),{:2f}".format(classes[int(x[-4])],x[-3],x[-2],x[-1])
     cv2.rectangle(img, c1, c2,(255,0,0), 4)
-    t_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_DUPLEX, 1 , 1)[0]
+    t_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_DUPLEX, 1, 1)[0]
     c2 = c1[0] + t_size[0] + 5, c1[1] + t_size[1] + 6
     cv2.rectangle(img, c1, c2,(255,0,0), -1)
     cv2.putText(img, label, (c1[0], c1[1] + t_size[1] + 4), cv2.FONT_HERSHEY_DUPLEX, 1, [225,255,255], 1);
@@ -57,16 +65,15 @@ pipeline.start(config)
 
 CUDA = torch.cuda.is_available() and opt.use_cuda
 
-# Set up model
+# Set up model and read the weight file
 model = Darknet(opt.config_path, img_size=opt.img_size)
-# model class Darknet(nn.Module)
 model.load_weights(opt.weights_path)
 input_dim = opt.img_size
 
 point_cloud_raw = np.empty((0,2))
 
 def callback(msg):
-
+    # rospy run this on the background to update point cloud information
     global point_cloud_raw
     point_cloud_raw = np.empty((0,2))
     num_points = len(msg.ranges)
@@ -80,15 +87,15 @@ def callback(msg):
             pass
         i+=angle_increment
 
+# initial a node and subscribe to scan
 rospy.init_node('lidarListen')
 sub = rospy.Subscriber('/scan', LaserScan, callback)
-# rospy.spin()
 
-print("finish load LaserSubs")
+# to make sure we use our GPU
 if CUDA:
     model.cuda()
-
-model.eval() # Set in evaluation mode
+# Set to evaluation mode(so that the pytorch don't calculate the gradients)
+model.eval()
 
 frames = 0
 start_time = time.time()
@@ -102,23 +109,28 @@ try:
         # Convert images to numpy arrays
         color_image = np.asanyarray(color_frame.get_data())
 
+        # resise it and change the columns
         img = prep_image(color_image, input_dim) # img: torch.Tensor size([1, 3, 416, 416])
-        img_dim = color_image.shape[1], color_image.shape[0] #(720 480)
-        img_dim = torch.FloatTensor(img_dim).repeat(1,2) # (1 4) [720 480 720 480]
-        # 重复im_dim 1行2列
+        img_dim = color_image.shape[1], color_image.shape[0]
+        img_dim = torch.FloatTensor(img_dim).repeat(1,2)
+        # repeat img_dim
 
+        # move tensore to device 'cuda' instead of 'cpu'
         if CUDA:
             img_dim = img_dim.cuda()
             img = img.cuda()
 
+        # pridiction
         with torch.no_grad():
             detections = model(img)
             detections = non_max_suppression(detections, 80, opt.conf_thres, opt.nms_thres)
             # write_results function performs NMS
             try:
+                # generate 3 column to store coordination and radius
                 detections_with_distance = torch.zeros((detections[0].shape[0]), detections[0].shape[1]+3)
                 detections_with_distance[:,:-3] = detections[0]
 
+                # to get coordination and radius
                 for detection in detections_with_distance:
                     detection[-3:] = get_frustum_rplidar_distance(detection, point_cloud_raw)
             except:
@@ -132,11 +144,12 @@ try:
             if key & 0xFF == ord('q'):
                 break
             continue
-
+        # move this to cuda
         if CUDA: detections_with_distance = detections_with_distance.cuda()
         img_dim = img_dim.repeat(detections_with_distance.size(0), 1)
         scaling_factor = torch.min(opt.img_size/img_dim,1)[0].view(-1,1)
         # view() transform the tensor in different size. in this case -1 means don't care. But column must be 1
+        # convert back to original image size
         detections_with_distance[:,[0,2]] -= (input_dim - scaling_factor*img_dim[:,0].view(-1,1))/2
         detections_with_distance[:,[1,3]] -= (input_dim - scaling_factor*img_dim[:,1].view(-1,1))/2
 
@@ -146,9 +159,10 @@ try:
             detections_with_distance[i, [0,2]] = torch.clamp(detections_with_distance[i, [0,2]], 0.0, img_dim[i,0])
             detections_with_distance[i, [1,3]] = torch.clamp(detections_with_distance[i, [1,3]], 0.0, img_dim[i,1])
 
-
+        # label with number to label with words
         classes = load_classes('data/coco.names')
 
+        # draw frame
         list(map(lambda x: write(x, color_image), detections_with_distance))
         cv2.imshow("frame", color_image)
         key = cv2.waitKey(1)

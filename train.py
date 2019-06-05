@@ -1,3 +1,10 @@
+'''
+recommand training with AlexeyAB/darknet
+with command
+$ ./darknet detector train cfg/coco.data cfg/v390.cfg backup/v390_last.weights -gpus 0,1
+
+faster than this approach
+'''
 from __future__ import division
 
 from models import *
