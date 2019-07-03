@@ -20,11 +20,9 @@ from sensor_msgs.msg import LaserScan
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--config_path', type=str, default='config/yolov3.cfg', help='path to model config file')
-# parser.add_argument('--config_path', type=str, default='config/v390.cfg', help='path to model config file')
-parser.add_argument('--weights_path', type=str, default='weights/yolov3.weights', help='path to weights file')
-# parser.add_argument('--weights_path', type=str, default='weights/v390_final.weights', help='path to weights file')
+parser.add_argument('--config_path', type=str, default='config/v390.cfg', help='path to model config file')
 # parser.add_argument('--weights_path', type=str, default='/home/project/ZijieMA/Trained_archiv/coco/v390_final.weights', help='path to weights file')
+parser.add_argument('--weights_path', type=str, default='weights/v390_final.weights', help='path to weights file')
 parser.add_argument('--class_path', type=str, default='data/coco.names', help='path to class label file')
 parser.add_argument('--conf_thres', type=float, default=0.5, help='object confidence threshold')
 parser.add_argument('--nms_thres', type=float, default=0.45, help='iou thresshold for non-maximum suppression')
@@ -47,15 +45,15 @@ def write(x, results):
     # dimension of the bounding box
     c2 = tuple(x[2:4].int())
     img = results
-    if classes[int(x[-4])]=="person":
-        label = "{},({:0.2f},{:0.2f}),{:0.2f}".format(classes[int(x[-4])],x[-3],x[-2],x[-1])
+    if classes[int(x[5])]=="person":
+        label = "{},({0:.2f},{0:.2f}),{0:.2f}".format("person",x[-3],x[-2],x[-1])
         cv2.rectangle(img, c1, c2,(255,0,0), 4)
         t_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_DUPLEX, 1, 1)[0]
         c2 = c1[0] + t_size[0] + 5, c1[1] + t_size[1] + 6
         cv2.rectangle(img, c1, c2,(255,0,0), -1)
         cv2.putText(img, label, (c1[0], c1[1] + t_size[1] + 4), cv2.FONT_HERSHEY_DUPLEX, 1, [225,255,255], 1);
-    else:
-        label = "{}".format(classes[int(x[-4])])
+    else classes[int(x[-4])] in ('car', 'truck', 'truck'):
+        label = "{},({:.2f},{:.2f}),{:.2f}".format(classes[int(x[-4])],x[-3],x[-2],x[-1])
         cv2.rectangle(img, c1, c2,(255,0,0), 4)
         t_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_DUPLEX, 1, 1)[0]
         c2 = c1[0] + t_size[0] + 5, c1[1] + t_size[1] + 6
@@ -71,9 +69,7 @@ config.enable_stream(rs.stream.color, 1920, 1080, rs.format.bgr8, 30)
 
 # Start streaming
 pipeline.start(config)
-fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 
-out = cv2.VideoWriter('output.mp4',fourcc, 30.0, (1920,1080))
 CUDA = torch.cuda.is_available() and opt.use_cuda
 
 # Set up model and read the weight file
@@ -159,7 +155,7 @@ try:
         if CUDA: detections_with_distance = detections_with_distance.cuda()
         img_dim = img_dim.repeat(detections_with_distance.size(0), 1)
         scaling_factor = torch.min(opt.img_size/img_dim,1)[0].view(-1,1)
-        # view() transform the tensor in different size. in this case -1 means  don't care. But column must be 1
+        # view() transform the tensor in different size. in this case -1 means don't care. But column must be 1
         # convert back to original image size
         detections_with_distance[:,[0,2]] -= (input_dim - scaling_factor*img_dim[:,0].view(-1,1))/2
         detections_with_distance[:,[1,3]] -= (input_dim - scaling_factor*img_dim[:,1].view(-1,1))/2
@@ -176,16 +172,10 @@ try:
         # draw frame
         list(map(lambda x: write(x, color_image), detections_with_distance))
         cv2.imshow("frame", color_image)
-        # out.write(color_image)
         key = cv2.waitKey(1)
-
         if key & 0xFF == ord('q'):
             break
 
 
 finally:
-    FPS = frames/(time.time()-start_time)
-    frames += 1
-    print('FPS:%.04f' % FPS, end='\r')
-    # Stop streaming
     pipeline.stop()

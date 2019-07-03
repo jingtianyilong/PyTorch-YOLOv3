@@ -8,6 +8,7 @@ from torch.autograd import Variable
 import numpy as np
 import cv2
 from sklearn import linear_model, datasets
+from itertools import compress
 
 # import matplotlib.pyplot as plt
 # import matplotlib.patches as patches
@@ -671,15 +672,42 @@ def get_frustum_rplidar_distance(detection, point_cloud):
     without all those matrix to find the frustum region
     '''
     detection = detection.numpy()
-    if detection[-4]==0: # make sure it is a person
-        img_width_orig = 1920 # image width
-        fu = 1387.531128 # focal length in u_coordination
-        unpad_w = 416 # detection information from CNN is with this size
+
+    '''  resolutionRGB: 1920 1080
+  FocalLengthColor: 1387.531128 1387.352051
+  PrincipalPointColor: 956.005127 558.462280
+  DistortionColor: 0.000000 0.000000 0.000000 0.000000 0.000000
+  RotationLeftColor: 0.999866 -0.014898 0.006766
+                     0.014936 0.999873 -0.005493
+                     -0.006683 0.005593 0.999962
+  TranslationLeftColor: 14.999831 0.375140 0.036474'''
+
+
+
+
+    if detection[-4] in (0, 2, 5, 7): # make sure it is a person or vehicle
         point_cloud = point_cloud.reshape(-1, 2)
 
+        img_width_orig = 1920 # image width
+        img_height_orig = 1080
+        Height_of_camera = 1.0
+
+        fv = 1387.352051
+        fu = 1387.531128 # focal length in u_coordination
+
+        unpad_w = 416 # detection information from CNN is with this size
+        unpad_h = 416
+
+        pad_y = unpad_w * (1-fv/fu)
         # calculate the bounding box information in original size
         box_w = ((detection[2] - detection[0]) / unpad_w) * img_width_orig
         u_left = (detection[0] / unpad_w) * img_width_orig
+        box_h = ((detection[3] - detection[1]) / unpad_h) * img_height_orig
+        v_upper = ((detection[1] - pad_y // 2) / unpad_h) * img_height_orig
+        v_bottom = v_upper + box_h
+
+        # rough estimation if the camera is front facing
+        D_rough = Height_of_camera * fv / (v_bottom - img_height_orig / 2)
 
         # calculate the angle to the side of the bounding box
         angle_left = np.arctan2(u_left - 0.5 * img_width_orig, fu) + np.pi/2
@@ -692,12 +720,63 @@ def get_frustum_rplidar_distance(detection, point_cloud):
             for point in point_cloud[row_mask]:
                 point_cloud_mask = np.append(point_cloud_mask,[[point[1]*np.cos(point[0]),point[1]*np.sin(point[0])]],axis=0)
 
-            # coordination and radius of the detected human
-            center_x = np.median(point_cloud_mask[:,1])+0.2
-            center_y = np.median(point_cloud_mask[:,0])
-            radius = box_w/fu * center_x
 
-            return torch.tensor([center_x, center_y, radius])
+            if detection[-4] == 0:
+                # coordination and radius of the detected human
+                center_x = np.median(point_cloud_mask[:,1])+0.2
+                center_y = np.median(point_cloud_mask[:,0])
+                radius = box_w/fu * center_x
+
+                return torch.tensor([center_x, center_y, radius])
+
+            elif detection[5] in (2, 5, 7):
+
+                ransac = linear_model.RANSACRegressor(residual_threshold=0.1)
+                ransac.fit(point_cloud_mask[:, 1].reshape(-1, 1), point_cloud_mask[:, 0].reshape(-1, 1))
+
+                # line points for first ransac
+                inlier_index = list(compress(range(len(ransac.inlier_mask_)), ransac.inlier_mask_))
+                # side vertex for each line
+                left_y_1 = point_cloud_mask[inlier_index, 1].min()
+                right_y_1 = point_cloud_mask[inlier_index, 1].max()
+                left_x_1 = ransac.predict([[left_y_1, ]])[0][0]
+                right_x_1 = ransac.predict([[right_y_1, ]])[0][0]
+
+                # list out all the outlier
+                outlier_index = list(compress(range(len(ransac.inlier_mask_)), [not i for i in ransac.inlier_mask_]))
+                outlier_point_cloud = point_cloud_mask[outlier_index, :]
+
+                # run the second ransac only when outlier points are more than 0.5
+                if len(outlier_index) > 1 / 5 * (len(point_cloud_mask)):
+
+                    ransac.fit(outlier_point_cloud[:, 1].reshape(-1, 1),
+                               outlier_point_cloud[:, 0].reshape(-1, 1))
+
+                    inlier_index = list(compress(range(len(ransac.inlier_mask_)), ransac.inlier_mask_))
+                    left_y_2 = outlier_point_cloud[inlier_index, 1].min()
+                    right_y_2 = outlier_point_cloud[inlier_index, 1].max()
+                    left_x_2 = ransac.predict([[left_y_2, ]])[0][0]
+                    right_x_2 = ransac.predict([[right_y_2, ]])[0][0]
+
+                    # intersection point of two ransec result
+                    x_2, y_2 = findIntersection(left_x_1, left_y_1,
+                                                right_x_1, right_y_1,
+                                                left_x_2, left_y_2,
+                                                right_x_2, right_y_2)
+                    x_1, y_1, x_3, y_3 = findEdgePoint(left_x_1, left_y_1,
+                                                       right_x_1, right_y_1,
+                                                       left_x_2, left_y_2,
+                                                       right_x_2, right_y_2)
+
+                    # return coordination of 3 contour point, from left to right.
+                    # make sure the intersection point is in the area
+                    if D_rough - 3 < x_2 < D_rough + 3 and point_cloud_mask[:, 1].min() < y_2 < point_cloud_mask[:,
+                                                                                                1].max():
+                        return torch.tensor([x_1, y_1, x_2, y_2, x_3, y_3])
+                    else:
+                        return torch.tensor([left_x_1, left_y_1, right_x_1, right_y_1])
+                else:
+                    return torch.tensor([left_x_1, left_y_1, right_x_1, right_y_1])
         else:
             return torch.tensor([0, 0, 0])
 
